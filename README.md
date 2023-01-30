@@ -3,9 +3,9 @@ This is an official Github repository for the PyTorch implementation of TimeVQVA
 
 TimeVQVAE is a robust time series generation model that utilizes vector quantization for data compression into the discrete latent space (stage1) and a bidirectional transformer for the prior learning (stage2).
 
-![](.fig/stage1.jpg){width=50%}
+<img src=".fig/stage1.jpg" alt="" width=100% height=100%>
 
-![](.fig/stage2.jpg)
+<img src=".fig/stage2.jpg" alt="" width=50% height=50%>
 
 ![](.fig/iterative_decoding_process.jpg)
 
