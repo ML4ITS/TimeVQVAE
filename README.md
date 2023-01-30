@@ -16,22 +16,26 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 </p>
 
 <p align="center">
-<img src=".fig/example_of_iterative_decoding.jpg" alt="" width=50% height=50%>
+<img src=".fig/example_of_iterative_decoding.jpg" alt="" width=60% height=60%>
 </p>
 
 
 # Install
+```angular2html
+$ pip install ...
+```
 
 # Usage
 
+
 # Citations
-```
-@misc{oord2018neural,
-    title   = {Neural Discrete Representation Learning},
-    author  = {Aaron van den Oord and Oriol Vinyals and Koray Kavukcuoglu},
-    year    = {2018},
-    eprint  = {1711.00937},
-    archivePrefix = {arXiv},
-    primaryClass = {cs.LG}
+```angular2html
+@misc{...,
+    title   = {Vector Quantized Time Series Modeling with a Bidirectional Prior Model},
+    author  = {},
+    year    = {2023},
+    eprint  = {},
+    archivePrefix = {},
+    primaryClass = {}
 }
 ```
