@@ -128,8 +128,8 @@ class Sampler(object):
         self.maskgit = MaskGIT(input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(device)
 
         # load
-        subset_name = self.config['dataset']['subset_name']
-        ckpt_fname = os.path.join('saved_models', f'maskgit-{subset_name}.ckpt')
+        dataset_name = self.config['dataset']['dataset_name']
+        ckpt_fname = os.path.join('saved_models', f'maskgit-{dataset_name}.ckpt')
         saved_state = torch.load(ckpt_fname)
         try:
             self.maskgit.load_state_dict(saved_state)

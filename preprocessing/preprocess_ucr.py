@@ -18,17 +18,17 @@ class DatasetImporterUCR(object):
     This uses train and test sets as given.
     To compare with the results from ["Unsupervised scalable representation learning for multivariate time series"]
     """
-    def __init__(self, subset_name: str, data_scaling: bool, **kwargs):
+    def __init__(self, dataset_name: str, data_scaling: bool, **kwargs):
         """
-        :param subset_name: e.g., "ElectricDevices"
+        :param dataset_name: e.g., "ElectricDevices"
         :param data_scaling
         """
         # download_ucr_datasets()
-        self.data_root = get_root_dir().joinpath("datasets", "UCRArchive_2018", subset_name)
+        self.data_root = get_root_dir().joinpath("datasets", "UCRArchive_2018", dataset_name)
 
         # fetch an entire dataset
-        df_train = pd.read_csv(self.data_root.joinpath(f"{subset_name}_TRAIN.tsv"), sep='\t', header=None)
-        df_test = pd.read_csv(self.data_root.joinpath(f"{subset_name}_TEST.tsv"), sep='\t', header=None)
+        df_train = pd.read_csv(self.data_root.joinpath(f"{dataset_name}_TRAIN.tsv"), sep='\t', header=None)
+        df_test = pd.read_csv(self.data_root.joinpath(f"{dataset_name}_TEST.tsv"), sep='\t', header=None)
 
         self.X_train, self.X_test = df_train.iloc[:, 1:].values, df_test.iloc[:, 1:].values
         self.Y_train, self.Y_test = df_train.iloc[:, [0]].values, df_test.iloc[:, [0]].values

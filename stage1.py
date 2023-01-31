@@ -67,7 +67,7 @@ def train_stage1(config: dict,
                 'encoder_h': train_exp.encoder_h,
                 'decoder_h': train_exp.decoder_h,
                 'vq_model_h': train_exp.vq_model_h,
-                }, id=config['dataset']['subset_name'])
+                }, id=config['dataset']['dataset_name'])
 
 
 if __name__ == '__main__':

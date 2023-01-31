@@ -57,13 +57,13 @@ class MaskGIT(nn.Module):
         self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # load trained models for encoder, decoder, and vq_models
-        subset_name = self.config['dataset']['subset_name']
-        self.load(self.encoder_l, get_root_dir().joinpath('saved_models'), f'encoder_l-{subset_name}.ckpt')
-        self.load(self.decoder_l, get_root_dir().joinpath('saved_models'), f'decoder_l-{subset_name}.ckpt')
-        self.load(self.vq_model_l, get_root_dir().joinpath('saved_models'), f'vq_model_l-{subset_name}.ckpt')
-        self.load(self.encoder_h, get_root_dir().joinpath('saved_models'), f'encoder_h-{subset_name}.ckpt')
-        self.load(self.decoder_h, get_root_dir().joinpath('saved_models'), f'decoder_h-{subset_name}.ckpt')
-        self.load(self.vq_model_h, get_root_dir().joinpath('saved_models'), f'vq_model_h-{subset_name}.ckpt')
+        dataset_name = self.config['dataset']['dataset_name']
+        self.load(self.encoder_l, get_root_dir().joinpath('saved_models'), f'encoder_l-{dataset_name}.ckpt')
+        self.load(self.decoder_l, get_root_dir().joinpath('saved_models'), f'decoder_l-{dataset_name}.ckpt')
+        self.load(self.vq_model_l, get_root_dir().joinpath('saved_models'), f'vq_model_l-{dataset_name}.ckpt')
+        self.load(self.encoder_h, get_root_dir().joinpath('saved_models'), f'encoder_h-{dataset_name}.ckpt')
+        self.load(self.decoder_h, get_root_dir().joinpath('saved_models'), f'decoder_h-{dataset_name}.ckpt')
+        self.load(self.vq_model_h, get_root_dir().joinpath('saved_models'), f'vq_model_h-{dataset_name}.ckpt')
 
         # freeze the models for encoder, decoder, and vq_models
         freeze(self.encoder_l)

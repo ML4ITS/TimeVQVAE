@@ -24,42 +24,14 @@ from supervised_FCN.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
 
 
-def KL_div(p_probs, q_probs, eps=1e-5):
-    KL_div = p_probs * torch.log((p_probs + eps) / (q_probs + eps))
-    return KL_div.sum()
-
-
-def histogram_torch(x, n_bins, density=True):
-    """
-    x: flatten x (1-dimensional time series)
-    """
-    a, b = x.min().item(), x.max().item()
-    delta = (b - a) / n_bins
-    count = torch.histc(x, n_bins, min=a, max=b).float()
-    if density:
-        count = count / float(x.shape[0])  #count / delta / float(x.shape[0])
-    return count
-
-
-def JS_Div(x1: torch.Tensor, x2: torch.Tensor, bins=100):
-    """
-    JS divergence has
-    - lower boundary of zero and
-    - upper boundary of inf.
-    """
-    x1 = copy.deepcopy(x1)
-    x2 = copy.deepcopy(x2)
-
-    p = histogram_torch(x1, bins, density=True)
-    q = histogram_torch(x2, bins, density=True)
-    assert np.abs(p.sum() - 1.0) <= 0.1  # check if an integral of `p` sums up to 1.0.
-    assert np.abs(q.sum() - 1.0) <= 0.1
-
-    m = (p + q) / 2
-    return (KL_div(p, m) + KL_div(q, m)) / 2
-
-
 class Evaluation(object):
+    """
+    - FID
+    - IS
+    - visual inspection
+    - PCA
+    - t-SNE
+    """
     def __init__(self, subset_dataset_name: str, gpu_device_index: int, config: dict, batch_size: int = 256):
         self.device = torch.device(gpu_device_index)
         self.batch_size = batch_size
@@ -83,8 +55,8 @@ class Evaluation(object):
         maskgit = MaskGIT(input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
 
         # load
-        subset_name = self.config['dataset']['subset_name']
-        fname = f'maskgit-{subset_name}.ckpt'
+        dataset_name = self.config['dataset']['dataset_name']
+        fname = f'maskgit-{dataset_name}.ckpt'
         try:
             ckpt_fname = os.path.join('saved_models', fname)
             maskgit.load_state_dict(torch.load(ckpt_fname))
@@ -238,7 +210,3 @@ class Evaluation(object):
         plt.tight_layout()
         wandb.log({"TSNE-latent_space": wandb.Image(plt)})
         plt.close()
-
-    def js_divergence(self, X_gen):
-        js_div = JS_Div(X_gen.cpu().flatten(), torch.from_numpy(self.X_test).flatten())
-        return js_div

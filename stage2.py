@@ -16,7 +16,7 @@ from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 
 from experiments.exp_maskgit import ExpMaskGIT
-from utils.evaluation import Evaluation
+from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model
 
 
@@ -61,13 +61,13 @@ def train_stage2(config: dict,
     wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
-    save_model({'maskgit': train_exp.maskgit}, id=config['dataset']['subset_name'])
+    save_model({'maskgit': train_exp.maskgit}, id=config['dataset']['dataset_name'])
 
     # test
     print('evaluating...')
     input_length = train_data_loader.dataset.X.shape[-1]
     n_classes = len(np.unique(train_data_loader.dataset.Y))
-    evaluation = Evaluation(config['dataset']['subset_name'], config['trainer_params']['gpus'][0], config)
+    evaluation = Evaluation(config['dataset']['dataset_name'], config['trainer_params']['gpus'][0], config)
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], config['dataset']['batch_sizes']['stage2']),
                                     input_length,
                                     n_classes,

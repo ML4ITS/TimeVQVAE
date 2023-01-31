@@ -46,7 +46,7 @@ class ExpVQVAE(ExpBase):
 
         # pre-trained feature extractor in case the perceptual loss is used
         if config['VQ-VAE']['perceptual_loss_weight']:
-            self.fcn = load_pretrained_FCN(config['dataset']['subset_name']).to(self.device)
+            self.fcn = load_pretrained_FCN(config['dataset']['dataset_name']).to(self.device)
             self.fcn.eval()
             freeze(self.fcn)
 
