@@ -3,7 +3,8 @@ CAS (= TSTR):
 - Train on the Synthetic samples, and
 - Test on the Real samples.
 
-[1] Smith, Kaleb E., and Anthony O. Smith. "Conditional GAN for timeseries generation." arXiv preprint arXiv:2006.16477 (2020)."""
+[1] Smith, Kaleb E., and Anthony O. Smith. "Conditional GAN for timeseries generation." arXiv preprint arXiv:2006.16477 (2020).
+"""
 from argparse import ArgumentParser
 
 import wandb
@@ -88,7 +89,7 @@ if __name__ == '__main__':
 
         # fit
         train_exp = ExpFCN(config_cas, len(train_data_loader.dataset), len(np.unique(train_data_loader.dataset.Y_gen)))
-        wandb_logger = WandbLogger(project='TimeVQVAE-TSTR', name=config['dataset']['dataset_name'], config=vars(args) | config_cas | config)
+        wandb_logger = WandbLogger(project='TimeVQVAE-CAS', name=config['dataset']['dataset_name'], config=vars(args) | config_cas | config)
         trainer = pl.Trainer(logger=wandb_logger,
                              enable_checkpointing=False,
                              callbacks=[LearningRateMonitor(logging_interval='epoch')],
