@@ -1,0 +1,62 @@
+dataset:
+  subset_name: 'Wafer'
+  in_channels: 1
+  data_scaling: True
+  batch_sizes:
+    stage1: 128
+    stage2: 256
+  num_workers: 0
+
+exp_params:
+  LR: 0.001
+  weight_decay: 0.00001
+
+trainer_params:
+  gpus:
+    - 0
+  max_epochs:
+    stage1: 2000 # 1000, 10000
+    stage2: 10000
+
+
+encoder:
+  dim: 64
+  n_resnet_blocks: 4
+  downsampled_width:
+    lf: 8
+    hf: 32
+
+decoder:
+  dim: 64
+  n_resnet_blocks: 4
+
+
+VQ-VAE:
+  n_fft: 8
+  codebook_sizes:
+    lf: 32
+    hf: 32
+  decay: 0.99
+  commitment_weight: 0.25
+  codebook_dim: 64
+  use_cosine_sim: False
+  emb_dropout: 0.1
+  perceptual_loss_weight: 0
+
+
+MaskGIT:
+  choice_temperatures: # for masking
+    lf: 4
+    hf: 4
+  stochastic_sampling: 1  # from (Lee et al., 2022)
+  T: 10
+  prior_model:
+    hidden_dim: 256
+    n_layers: 4
+    heads: 2
+    ff_mult: 1
+    use_rmsnorm: True
+    p_unconditional: 0.2
+
+class_guidance:
+  guidance_scale: 1.
