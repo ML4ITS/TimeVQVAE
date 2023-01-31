@@ -5,7 +5,7 @@ dataset:
 
 exp_params:
   LR: 0.001  # learning rate
-  weight_decay: 0.01
+  weight_decay: 0.00001
 
 trainer_params:
   gpus:
