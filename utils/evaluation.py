@@ -17,7 +17,7 @@ from sklearn.manifold import TSNE
 from generators.maskgit import MaskGIT
 from preprocessing.data_pipeline import build_data_pipeline
 from preprocessing.preprocess_ucr import DatasetImporterUCR
-from sample import unconditional_sample, conditional_sample
+from generators.sample import unconditional_sample, conditional_sample
 from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN.example_compute_FID import calculate_fid
 from supervised_FCN.example_compute_IS import calculate_inception_score
@@ -105,9 +105,12 @@ class Evaluation(object):
 
         return x_new_l, x_new_h, x_new
 
-    def fid_score(self, X_gen) -> (int, (np.ndarray, np.ndarray)):
-        # assert self.X_test.shape[0] == X_gen.shape[0], "shape of `X_test` must be the same as that of `X_gen`."
-
+    def compute_z(self, X_gen: torch.Tensor) -> (np.ndarray, np.ndarray):
+        """
+        It computes representation z given input x
+        :param X_gen: generated X
+        :return: z_test (z on X_test), z_gen (z on X_generated)
+        """
         n_samples = self.X_test.shape[0]
         n_iters = n_samples // self.batch_size
         if n_samples % self.batch_size > 0:
@@ -116,7 +119,7 @@ class Evaluation(object):
         # get feature vectors from `X_test` and `X_gen`
         z_test, z_gen = [], []
         for i in range(n_iters):
-            s = slice(i*self.batch_size, (i+1)*self.batch_size)
+            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
 
             z_t = self.fcn(torch.from_numpy(self.X_test[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
             z_g = self.fcn(X_gen[s].float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
@@ -124,12 +127,13 @@ class Evaluation(object):
             z_test.append(z_t)
             z_gen.append(z_g)
         z_test, z_gen = np.concatenate(z_test, axis=0), np.concatenate(z_gen, axis=0)
+        return z_test, z_gen
 
-        # FID between z1 and z1
+    def fid_score(self, z_test: np.ndarray, z_gen: np.ndarray) -> (int, (np.ndarray, np.ndarray)):
         fid = calculate_fid(z_test, z_gen)
         return fid, (z_test, z_gen)
 
-    def inception_score(self, X_gen):
+    def inception_score(self, X_gen: torch.Tensor):
         # assert self.X_test.shape[0] == X_gen.shape[0], "shape of `X_test` must be the same as that of `X_gen`."
 
         n_samples = self.X_test.shape[0]

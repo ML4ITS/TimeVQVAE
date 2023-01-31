@@ -15,7 +15,7 @@ trainer_params:
   gpus:
     - 0
   max_epochs:
-    stage1: 2000 # 1000, 10000
+    stage1: 2000
     stage2: 10000
 
 
@@ -39,7 +39,6 @@ VQ-VAE:
   decay: 0.99
   commitment_weight: 0.25
   codebook_dim: 64
-  use_cosine_sim: False
   emb_dropout: 0.1
   perceptual_loss_weight: 0
 

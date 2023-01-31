@@ -29,7 +29,7 @@ $ pip install ...
 
 
 # Citations
-```angular2html
+```
 @misc{...,
     title   = {Vector Quantized Time Series Modeling with a Bidirectional Prior Model},
     author  = {},

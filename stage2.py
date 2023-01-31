@@ -1,20 +1,23 @@
 """
-Stage 1: VQ training
+Stage2: prior learning
 
-run `python stage1.py`
+run `python stage2.py`
 """
 from argparse import ArgumentParser
 
+import torch
 import wandb
+import numpy as np
 import pytorch_lightning as pl
+from torch.utils.data import DataLoader
+from preprocessing.data_pipeline import build_data_pipeline
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
-from torch.utils.data import DataLoader
-
-from experiments.exp_vq_vae import ExpVQVAE
 from preprocessing.preprocess_ucr import DatasetImporterUCR
-from preprocessing.data_pipeline import build_data_pipeline
-from utils import *
+
+from experiments.exp_maskgit import ExpMaskGIT
+from utils.evaluation import Evaluation
+from utils import get_root_dir, load_yaml_param_settings, save_model
 
 
 def load_args():
@@ -24,7 +27,7 @@ def load_args():
     return parser.parse_args()
 
 
-def train_stage1(config: dict,
+def train_stage2(config: dict,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader = None,
                  do_validate: bool = False,
@@ -33,18 +36,19 @@ def train_stage1(config: dict,
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
-    project_name = 'TimeVQVAE-stage1'
+    project_name = 'TimeVQVAE-stage2'
     if wandb_project_case_idx != '':
         project_name += f'-{wandb_project_case_idx}'
 
     # fit
+    n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpVQVAE(input_length, config, len(train_data_loader.dataset))
+    train_exp = ExpMaskGIT(input_length, config, len(train_data_loader.dataset), n_classes)
     wandb_logger = WandbLogger(project=project_name, name=None, config=config)
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage1'],
+                         max_epochs=config['trainer_params']['max_epochs']['stage2'],
                          devices=config['trainer_params']['gpus'],
                          accelerator='gpu')
     trainer.fit(train_exp,
@@ -56,18 +60,27 @@ def train_stage1(config: dict,
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb.log({'n_trainable_params:': n_trainable_params})
 
-    # test
-    print('closing...')
-    wandb.finish()
+    print('saving the model...')
+    save_model({'maskgit': train_exp.maskgit}, id=config['dataset']['subset_name'])
 
-    print('saving the models...')
-    save_model({'encoder_l': train_exp.encoder_l,
-                'decoder_l': train_exp.decoder_l,
-                'vq_model_l': train_exp.vq_model_l,
-                'encoder_h': train_exp.encoder_h,
-                'decoder_h': train_exp.decoder_h,
-                'vq_model_h': train_exp.vq_model_h,
-                }, id=config['dataset']['subset_name'])
+    # test
+    print('evaluating...')
+    input_length = train_data_loader.dataset.X.shape[-1]
+    n_classes = len(np.unique(train_data_loader.dataset.Y))
+    evaluation = Evaluation(config['dataset']['subset_name'], config['trainer_params']['gpus'][0], config)
+    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], config['dataset']['batch_sizes']['stage2']),
+                                    input_length,
+                                    n_classes,
+                                    'unconditional')
+    z_test, z_gen = evaluation.compute_z(x_gen)
+    fid, (z_test, z_gen) = evaluation.fid_score(z_test, z_gen)
+    IS_mean, IS_std = evaluation.inception_score(x_gen)
+    wandb.log({'FID': fid, 'IS_mean': IS_mean, 'IS_std': IS_std})
+
+    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
+    evaluation.log_pca(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+    evaluation.log_tsne(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+    wandb.finish()
 
 
 if __name__ == '__main__':
@@ -77,8 +90,8 @@ if __name__ == '__main__':
 
     # data pipeline
     dataset_importer = DatasetImporterUCR(**config['dataset'])
-    batch_size = config['dataset']['batch_sizes']['stage1']
+    batch_size = config['dataset']['batch_sizes']['stage2']
     train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
     # train
-    train_stage1(config, train_data_loader)
+    train_stage2(config, train_data_loader)
