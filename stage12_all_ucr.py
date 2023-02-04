@@ -35,6 +35,7 @@ if __name__ == '__main__':
 
     # run
     dataset_names = get_target_ucr_dataset_names(args)
+    print('dataset_names:', dataset_names)
     for dataset_name in dataset_names:
         # set `dataset_name`
         args.data_name = f'{dataset_name}'
