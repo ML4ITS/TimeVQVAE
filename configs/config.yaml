@@ -36,10 +36,10 @@ VQ-VAE:
   codebook_sizes:
     lf: 32
     hf: 32
-  decay: 0.99
-  commitment_weight: 0.
+  decay: 0.8
+  commitment_weight: 1.
   codebook_dim: 64
-  emb_dropout: 0.1
+  emb_dropout: 0.
   perceptual_loss_weight: 0
 
 
