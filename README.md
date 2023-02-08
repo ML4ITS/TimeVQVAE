@@ -20,9 +20,14 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 </p>
 
 
-## Install
+## Install / Environment setup
+The following command creates the conda environment from the `environment.yml`. The installed environment is named `timevqvae`.
 ```
-$ pip install ...
+$ conda env create -f environment.yml
+```
+You can activate the environment by running
+```
+$ conda activate timevqvae
 ```
 
 ## Usage
