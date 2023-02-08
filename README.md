@@ -59,15 +59,6 @@ $ python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
 
 ## Citations
 ```
-@misc{...,
-    title   = {Vector Quantized Time Series Modeling with a Bidirectional Prior Model},
-    author  = {},
-    year    = {2023},
-    eprint  = {},
-    archivePrefix = {},
-    primaryClass = {}
-}
-
 @article{...,
   title={...},
   author={...},
