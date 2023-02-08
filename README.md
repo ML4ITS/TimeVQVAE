@@ -20,15 +20,45 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 </p>
 
 
-# Install
-```angular2html
+## Install
+```
 $ pip install ...
 ```
 
-# Usage
+## Usage
+
+### Configuration
+`configs/config.yaml`: configuration for dataset, data loading, optimizer, and models (_i.e.,_ encoder, decoder, vector-quantizer, and MaskGIT)
+
+`config/sconfig_cas.yaml`: configuration for running CAS, Classification Accuracy Score (= TSTR, Training on Synthetic and Test on Real).
+
+### Usage
+:rocket: The stage 1 and stage 2 training can be performed with the following command: 
+```
+$ python stage1.py   
+```
+```
+$ python stage2.py   
+```
+Note that you need to specify a dataset of your interest in `configs/config.yaml`.
+
+:bulb: The training pipeline is as follows:
+- Run `stage1.py` and it saves trained encoders, decoders, and vector-quantizers for LF and HF.
+- Run `stage2.py` and it saves the prior model (_i.e.,_ bidirectional transformer).
+  - `stage2.py` includes an evaluation step which is performed right after the stage 2 training. The evaluation includes a visualization plot of test samples (from a test set) versus generated samples, FID score, and IS (Inception Score).    
+
+:rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
+```
+$ python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
+```
+
+:rocket: CAS can be performed with the following command:
+```
+$ python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
+```
 
 
-# Citations
+## Citations
 ```
 @misc{...,
     title   = {Vector Quantized Time Series Modeling with a Bidirectional Prior Model},
