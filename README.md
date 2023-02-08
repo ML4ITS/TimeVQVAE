@@ -36,7 +36,7 @@ $ conda activate timevqvae
 - `configs/config.yaml`: configuration for dataset, data loading, optimizer, and models (_i.e.,_ encoder, decoder, vector-quantizer, and MaskGIT)
 - `config/sconfig_cas.yaml`: configuration for running CAS, Classification Accuracy Score (= TSTR, Training on Synthetic and Test on Real).
 
-### Usage
+### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```
 $ python stage1.py   
