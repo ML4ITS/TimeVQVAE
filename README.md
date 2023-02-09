@@ -61,6 +61,15 @@ $ python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
 $ python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
 ```
 
+## Google Colab
+[![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1Z2bOQQqSwvBaEQx4-xKz60QleiVBMKSU?usp=sharing)
+
+A Google Colab notebook is available for time series generation with the pretrained VQVAE. 
+The usage is simple:
+1. **User Settings**: specify `dataset_name` and `n_samples_to_generate`.
+2. **Sampling**: Run the unconditional sampling and class-conditional sampling.
+
+Note that the pretrained models are automatically downloaded within the notebook. In case you're interested, the pretrained models are stored in [here](https://figshare.com/articles/software/Pretrained_models_of_TimeVQVAE/22048034).
 
 ## Citations
 ```
