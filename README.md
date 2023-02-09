@@ -71,6 +71,9 @@ The usage is simple:
 
 Note that the pretrained models are automatically downloaded within the notebook. In case you're interested, the pretrained models are stored in [here](https://figshare.com/articles/software/Pretrained_models_of_TimeVQVAE/22048034).
 
+## Remarks
+* The full result tables for FID, IS, and CAS are available in `results/`.
+
 ## Citations
 ```
 @article{...,
