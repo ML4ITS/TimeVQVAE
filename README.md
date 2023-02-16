@@ -62,7 +62,7 @@ $ python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
 ```
 
 ## Google Colab
-[![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1Z2bOQQqSwvBaEQx4-xKz60QleiVBMKSU?usp=sharing) (NB! make sure to change your notebook setting to GPU.)
+[![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ML4ITS/TimeVQVAE/blob/main/.google_colab/TimeVQVAE%20(generation%20only).ipynb) (NB! make sure to change your notebook setting to GPU.)
 
 A Google Colab notebook is available for time series generation with the pretrained VQVAE. 
 The usage is simple:
