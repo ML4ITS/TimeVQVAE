@@ -63,45 +63,40 @@ class ExpVQVAE(ExpBase):
         # time-frequency transformation: STFT(x)
         C = x.shape[1]
         xf = time_to_timefreq(x, self.n_fft, C)  # (B, C, H, W)
+        u_l = zero_pad_high_freq(xf)  # (B, C, H, W)
+        x_l = timefreq_to_time(u_l, self.n_fft, C)  # (B, C, L)
 
         # register `upsample_size` in the decoders
         for decoder in [self.decoder_l, self.decoder_h]:
             if not decoder.is_upsample_size_updated:
                 decoder.register_upsample_size(torch.IntTensor(np.array(xf.shape[2:])))
 
-        # forward: low-freq ==============================
-        z = self.encoder_l(zero_pad_high_freq(xf))
-        z_q, indices, vq_loss, perplexity = quantize(z, self.vq_model_l)
-        xfhat = self.decoder_l(z_q)
-
-        # time_frequency -> time
-        xf_l = zero_pad_high_freq(xf)
-        x_l = timefreq_to_time(xf_l, self.n_fft, C)  # (B, C, L)
-
-        xfhat_l = zero_pad_high_freq(xfhat)
-        xhat_l = timefreq_to_time(xfhat_l, self.n_fft, C)  # (B, C, L)
+        # forward: low-freq
+        z_l = self.encoder_l(u_l)
+        z_q_l, indices_l, vq_loss_l, perplexity_l = quantize(z_l, self.vq_model_l)
+        xfhat_l = self.decoder_l(z_q_l)
+        uhat_l = zero_pad_high_freq(xfhat_l)
+        xhat_l = timefreq_to_time(uhat_l, self.n_fft, C)  # (B, C, L)
 
         recons_loss['LF.time'] = F.mse_loss(x_l, xhat_l)
-        recons_loss['LF.timefreq'] = F.mse_loss(xf_l, xfhat_l)
-        perplexities['LF'] = perplexity
-        vq_losses['LF'] = vq_loss
+        recons_loss['LF.timefreq'] = F.mse_loss(u_l, uhat_l)
+        perplexities['LF'] = perplexity_l
+        vq_losses['LF'] = vq_loss_l
 
-        # forward: high-freq ==============================
-        z = self.encoder_h(zero_pad_low_freq(xf))
-        z_q, indices, vq_loss, perplexity = quantize(z, self.vq_model_h)
-        xfhat = self.decoder_h(z_q)
+        # forward: high-freq
+        u_h = zero_pad_low_freq(xf)  # (B, C, H, W)
+        x_h = timefreq_to_time(u_h, self.n_fft, C)  # (B, C, L)
 
-        # time_frequency -> time
-        xf_h = zero_pad_low_freq(xf)
-        x_h = timefreq_to_time(xf_h, self.n_fft, C)  # (B, C, L)
-
-        xfhat_h = zero_pad_low_freq(xfhat)
-        xhat_h = timefreq_to_time(xfhat_h, self.n_fft, C)  # (B, C, L)
+        z_h = self.encoder_h(u_h)
+        z_q_h, indices_h, vq_loss_h, perplexity_h = quantize(z_h, self.vq_model_h)
+        xfhat_h = self.decoder_h(z_q_h)
+        uhat_h = zero_pad_low_freq(xfhat_h)
+        xhat_h = timefreq_to_time(uhat_h, self.n_fft, C)  # (B, C, L)
 
         recons_loss['HF.time'] = F.l1_loss(x_h, xhat_h)
-        recons_loss['HF.timefreq'] = F.mse_loss(xf_h, xfhat_h)
-        perplexities['HF'] = perplexity
-        vq_losses['HF'] = vq_loss
+        recons_loss['HF.timefreq'] = F.mse_loss(u_h, uhat_h)
+        perplexities['HF'] = perplexity_h
+        vq_losses['HF'] = vq_loss_h
 
         if self.config['VQ-VAE']['perceptual_loss_weight']:
             z_fcn = self.fcn(x.float(), return_feature_vector=True).detach()
