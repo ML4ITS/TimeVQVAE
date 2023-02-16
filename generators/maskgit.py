@@ -129,7 +129,7 @@ class MaskGIT(nn.Module):
             model.load_state_dict(torch.load(dirname.joinpath(fname)))
 
     @torch.no_grad()
-    def encode_to_z(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None):
+    def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None):
         """
         x: (B, C, L)
         """
@@ -148,39 +148,37 @@ class MaskGIT(nn.Module):
         straight from [https://github.com/dome272/MaskGIT-pytorch/blob/main/transformer.py]
         """
         device = x.device
-        _, z_indices_l = self.encode_to_z(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-        _, z_indices_h = self.encode_to_z(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+        _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
+        _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
         # randomly sample `t`
         t = np.random.uniform(0, 1)
 
         # create masks
-        r = math.floor(self.gamma(t) * z_indices_l.shape[1])
-        rand = torch.rand(z_indices_l.shape, device=device)
-        sample = rand.topk(r, dim=1).indices
-        mask_l = torch.zeros(z_indices_l.shape, dtype=torch.bool, device=device)
-        mask_l.scatter_(dim=1, index=sample, value=True)
+        n_masks_l = math.floor(self.gamma(t) * s_l.shape[1])
+        rand = torch.rand(s_l.shape, device=device)  # (b n)
+        mask_l = torch.zeros(s_l.shape, dtype=torch.bool, device=device)
+        mask_l.scatter_(dim=1, index=rand.topk(n_masks_l, dim=1).indices, value=True)
 
-        r = math.floor(self.gamma(t) * z_indices_h.shape[1])
-        rand = torch.rand(z_indices_h.shape, device=device)
-        sample = rand.topk(r, dim=1).indices
-        mask_h = torch.zeros(z_indices_h.shape, dtype=torch.bool, device=device)
-        mask_h.scatter_(dim=1, index=sample, value=True)
+        n_masks_h = math.floor(self.gamma(t) * s_h.shape[1])
+        rand = torch.rand(s_h.shape, device=device)  # (b m)
+        mask_h = torch.zeros(s_h.shape, dtype=torch.bool, device=device)
+        mask_h.scatter_(dim=1, index=rand.topk(n_masks_h, dim=1).indices, value=True)
 
         # masked tokens
-        masked_indices_l = self.mask_token_ids['LF'] * torch.ones_like(z_indices_l, device=device)
-        a_indices = mask_l * z_indices_l + (~mask_l) * masked_indices_l  # (b n); `~` reverses bool-typed data
-        masked_indices_h = self.mask_token_ids['HF'] * torch.ones_like(z_indices_h, device=device)
-        a_indices_h = mask_h * z_indices_h + (~mask_h) * masked_indices_h  # (b m)
+        masked_indices_l = self.mask_token_ids['LF'] * torch.ones_like(s_l, device=device)  # (b n)
+        s_l_M = mask_l * s_l + (~mask_l) * masked_indices_l  # (b n); `~` reverses bool-typed data
+        masked_indices_h = self.mask_token_ids['HF'] * torch.ones_like(s_h, device=device)
+        s_h_M = mask_h * s_h + (~mask_h) * masked_indices_h  # (b m)
 
         # prediction
-        logits_l = self.transformer_l(a_indices.detach(), class_condition=y)  # (b n codebook_size)
-        target_l = z_indices_l  # (b n)
+        logits_l = self.transformer_l(s_l_M.detach(), class_condition=y)  # (b n codebook_size)
+        target_l = s_l  # (b n)
 
-        logits_h = self.transformer_h(target_l.detach(), a_indices_h.detach(), class_condition=y)  # (b m codebook_size)
-        target_h = z_indices_h
+        logits_h = self.transformer_h(s_l.detach(), s_h_M.detach(), class_condition=y)  # (b m codebook_size)
+        target_h = s_h  # (b m)
 
-        return [logits_l, logits_h], [target_l, target_h]  # (2*b, n, codebook_size), (2*b, n),   # (2*b n_classes)
+        return [logits_l, logits_h], [target_l, target_h]
 
     def gamma_func(self, mode="cosine"):
         if mode == "linear":
@@ -229,26 +227,25 @@ class MaskGIT(nn.Module):
                    gamma: Callable,
                    device):
         for t in range(self.T):
-            logits_l = self.transformer_l(s_l, class_condition=class_condition)  # (b n codebook_size)
+            logits_l = self.transformer_l(s_l, class_condition=class_condition)  # (b n codebook_size) == (b n K)
             if isinstance(class_condition, torch.Tensor):
                 logits_l_null = self.transformer_l(s_l, class_condition=None)
                 logits_l = logits_l_null + guidance_scale * (logits_l - logits_l_null)
-            sampled_ids = torch.distributions.categorical.Categorical(logits=logits_l).sample()
-            unknown_map = (s_l == self.mask_token_ids['LF'])  # which tokens need to be sampled -> bool [8, 257]
-            sampled_ids = torch.where(unknown_map, sampled_ids, s_l)  # replace all -1 with their samples and leave the others untouched [8, 257]
+            sampled_ids = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
+            unknown_map = (s_l == self.mask_token_ids['LF'])  # which tokens need to be sampled; (b n)
+            sampled_ids = torch.where(unknown_map, sampled_ids, s_l)  # keep the previously-sampled tokens; (b n)
 
-            # create masking
+            # create masking according to `t`
             ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
             mask_ratio = gamma(ratio)
 
-            probs = F.softmax(logits_l, dim=-1)  # convert logits into probs [8, 257, 1024]
-            selected_probs = torch.squeeze(torch.take_along_dim(probs, torch.unsqueeze(sampled_ids, -1), -1), -1)  # get probability for selected tokens in categorical call, also for already sampled ones [8, 257]
+            probs = F.softmax(logits_l, dim=-1)  # convert logits into probs; (b n K)
+            selected_probs = torch.gather(probs, dim=-1, index=sampled_ids.unsqueeze(-1)).squeeze()  # get probability for the selected tokens; p(\hat{s}(t) | \hat{s}_M(t)); (b n)
             _CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf]).to(device)
-            selected_probs = torch.where(unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS)  # ignore tokens which are already sampled [8, 257]
+            selected_probs = torch.where(unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS)  # assign inf probability to the previously-selected tokens; (b n)
 
-            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_l * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
-            mask_len = torch.maximum(torch.zeros_like(mask_len), torch.minimum(torch.sum(unknown_map, dim=-1, keepdim=True) - 1, mask_len))  # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
-            # max(1, min(how many unknown tokens, how many tokens we want to sample))
+            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_l * mask_ratio), 1)  # number of tokens that are to be masked;  (b,)
+            mask_len = torch.clip(mask_len, min=0.)  # `mask_len` should be equal or larger than zero.
 
             # Adds noise for randomness
             masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature_l * (1. - ratio), device=device)
@@ -266,26 +263,25 @@ class MaskGIT(nn.Module):
                     gamma: Callable,
                     device):
         for t in range(self.T):
-            logits_h = self.transformer_h(s_l, s_h, class_condition=class_condition)  # (b m codebook_size)
+            logits_h = self.transformer_h(s_l, s_h, class_condition=class_condition)  # (b m codebook_size) == (b m K)
             if isinstance(class_condition, torch.Tensor) and (guidance_scale > 1):
                 logits_h_null = self.transformer_h(s_l, s_h, class_condition=None)
                 logits_h = logits_h_null + guidance_scale * (logits_h - logits_h_null)
-            sampled_ids = torch.distributions.categorical.Categorical(logits=logits_h).sample()
-            unknown_map = (s_h == self.mask_token_ids['HF'])  # which tokens need to be sampled -> bool [8, 257]
-            sampled_ids = torch.where(unknown_map, sampled_ids, s_h)  # replace all -1 with their samples and leave the others untouched [8, 257]
+            sampled_ids = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
+            unknown_map = (s_h == self.mask_token_ids['HF'])  # which tokens need to be sampled; (b m)
+            sampled_ids = torch.where(unknown_map, sampled_ids, s_h)  # keep the previously-sampled tokens; (b m)
 
-            # create masking
+            # create masking according to `t`
             ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
             mask_ratio = gamma(ratio)
 
-            probs = F.softmax(logits_h, dim=-1)  # convert logits into probs [8, 257, 1024]
-            selected_probs = torch.squeeze(torch.take_along_dim(probs, torch.unsqueeze(sampled_ids, -1), -1), -1)  # get probability for selected tokens in categorical call, also for already sampled ones [8, 257]
+            probs = F.softmax(logits_h, dim=-1)  # convert logits into probs; (b m K)
+            selected_probs = torch.gather(probs, dim=-1, index=sampled_ids.unsqueeze(-1)).squeeze()  # get probability for the selected tokens; p(\hat{s}(t) | \hat{s}_M(t)); (b m)
             _CONFIDENCE_OF_KNOWN_TOKENS = torch.Tensor([torch.inf]).to(device)
-            selected_probs = torch.where(unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS)  # ignore tokens which are already sampled [8, 257]
+            selected_probs = torch.where(unknown_map, selected_probs, _CONFIDENCE_OF_KNOWN_TOKENS)  # assign inf probability to the previously-selected tokens; (b m)
 
-            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_h * mask_ratio), 1)  # floor(256 * 0.99) = 254 --> [254, 254, 254, 254, ....]
-            mask_len = torch.maximum(torch.zeros_like(mask_len), torch.minimum(torch.sum(unknown_map, dim=-1, keepdim=True) - 1, mask_len))  # add -1 later when conditioning and also ones_like. Zeroes just because we have no cond token
-            # max(1, min(how many unknown tokens, how many tokens we want to sample))
+            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_h * mask_ratio), 1)  # number of tokens that are to be masked;  (b,)
+            mask_len = torch.clip(mask_len, min=0.)  # `mask_len` should be equal or larger than zero.
 
             # Adds noise for randomness
             masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature_h * (1. - ratio), device=device)
@@ -304,8 +300,8 @@ class MaskGIT(nn.Module):
         s_l = self.create_input_tokens_normal(num, self.num_tokens_l, self.mask_token_ids['LF'], device)  # (b n)
         s_h = self.create_input_tokens_normal(num, self.num_tokens_h, self.mask_token_ids['HF'], device)  # (b n)
 
-        unknown_number_in_the_beginning_l = torch.sum(s_l == self.mask_token_ids['LF'], dim=-1)
-        unknown_number_in_the_beginning_h = torch.sum(s_h == self.mask_token_ids['HF'], dim=-1)
+        unknown_number_in_the_beginning_l = torch.sum(s_l == self.mask_token_ids['LF'], dim=-1)  # (b,)
+        unknown_number_in_the_beginning_h = torch.sum(s_h == self.mask_token_ids['HF'], dim=-1)  # (b,)
         gamma = self.gamma_func(mode)
         class_condition = repeat(torch.Tensor([class_index]).int().to(device), 'i -> b i', b=num) if class_index != None else None  # (b 1)
 
@@ -336,8 +332,8 @@ class MaskGIT(nn.Module):
 
         xfhat = decoder(quantize)
 
-        xfhat = zero_pad(xfhat)
-        xhat = timefreq_to_time(xfhat, self.n_fft, self.config['dataset']['in_channels'])  # (B, C, L)
+        uhat = zero_pad(xfhat)
+        xhat = timefreq_to_time(uhat, self.n_fft, self.config['dataset']['in_channels'])  # (B, C, L)
 
         if return_representations:
             return xhat, quantize
