@@ -19,6 +19,9 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 <img src=".fig/example_of_iterative_decoding.jpg" alt="" width=60% height=60%>
 </p>
 
+<p align="center">
+<img src=".fig/visual_examples_generated_samples.jpg" alt="" width=60% height=60%>
+</p>
 
 ## Install / Environment setup
 The following command creates the conda environment from the `environment.yml`. The installed environment is named `timevqvae`.
