@@ -20,7 +20,7 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 </p>
 
 <p align="center">
-<img src=".fig/visual_examples_generated_samples.jpg" alt="" width=60% height=60%>
+<img src=".fig/visual_examples_generated_samples.jpg" alt="" width=100% height=100%>
 </p>
 
 ## Install / Environment setup
