@@ -77,7 +77,7 @@ Note that the pretrained models are automatically downloaded within the notebook
 ## Remarks
 * The full result tables for FID, IS, and CAS are available in `results/`.
 
-## Citations
+## Citation
 ```
 @inproceedings{timevqvae2023,
   title={Vector Quantized Time Series Generation with a Bidirectional Prior Model},
