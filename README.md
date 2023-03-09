@@ -79,13 +79,11 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ## Citations
 ```
-@article{...,
-  title={...},
-  author={...},
-  journal={...},
-  volume={},
-  pages={},
+@inproceedings{timevqvae2023,
+  title={Vector Quantized Time Series Generation with a Bidirectional Prior Model},
+  author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
+  booktitle={International Conference on Artificial Intelligence and Statistics},
   year={2023},
-  publisher={}
+  organization={PMLR}
 }
 ```
