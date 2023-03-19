@@ -34,7 +34,7 @@ $ conda activate timevqvae
 ```
 
 ## Dataset Download
-The UCR archive datasets are automatically downloaded if you run any of the codes below such as `$ python stage1.py`.
+The UCR archive datasets are automatically downloaded if you run any of the training command below such as `$ python stage1.py`.
 If you just want to download the datasets only without running the training, run
 ```commandline
 $ python preprocessing/preprocess_ucr.py
