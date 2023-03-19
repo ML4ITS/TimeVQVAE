@@ -25,13 +25,21 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 
 ## Install / Environment setup
 The following command creates the conda environment from the `environment.yml`. The installed environment is named `timevqvae`.
-```
+```commandline
 $ conda env create -f environment.yml
 ```
 You can activate the environment by running
-```
+```commandline
 $ conda activate timevqvae
 ```
+
+## Dataset Download
+The UCR archive datasets are automatically downloaded if you run any of the codes below such as `$ python stage1.py`.
+If you just want to download the datasets only with running the training, run
+```commandline
+$ python preprocessing/preprocess_ucr.py
+```
+
 
 ## Usage
 
@@ -41,10 +49,10 @@ $ conda activate timevqvae
 
 ### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
-```
+```commandline
 $ python stage1.py   
 ```
-```
+```commandline
 $ python stage2.py   
 ```
 Note that you need to specify a dataset of your interest in `configs/config.yaml`.
@@ -55,12 +63,12 @@ Note that you need to specify a dataset of your interest in `configs/config.yaml
   - `stage2.py` includes an evaluation step which is performed right after the stage 2 training. The evaluation includes a visualization plot of test samples (from a test set) versus generated samples, FID score, and IS (Inception Score).    
 
 :rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
-```
+```commandline
 $ python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
 ```
 
 :rocket: CAS can be performed with the following command:
-```
+```commandline
 $ python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
 ```
 
