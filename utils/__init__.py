@@ -11,6 +11,8 @@ import numpy as np
 from pathlib import Path
 
 from sklearn.preprocessing import MinMaxScaler
+import requests
+import tarfile
 
 
 def get_root_dir():
@@ -301,3 +303,29 @@ def compute_downsample_rate(input_length: int,
                             n_fft: int,
                             downsampled_width: int):
     return round(input_length / (np.log2(n_fft) - 1) / downsampled_width) if input_length >= downsampled_width else 1
+
+
+def download_ucr_datasets(url='https://figshare.com/ndownloader/files/37909926', chunk_size=128, zip_fname='UCR_archive.zip'):
+    dirname = str(get_root_dir().joinpath("datasets"))
+    if not os.path.isdir(dirname) or (len(os.listdir(dirname)) == 0):
+        if not os.path.isdir(dirname):
+            os.mkdir(dirname)
+
+        # download
+        r = requests.get(url, stream=True)
+        print('downloading the UCR archive datasets...\n')
+        fname = os.path.join(dirname, zip_fname)
+        with open(fname, 'wb') as fd:
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                fd.write(chunk)
+
+        # unzip
+        with tarfile.open(fname) as ff:
+            ff.extractall(path=dirname)
+    elif os.path.isfile(str(get_root_dir().joinpath("datasets", zip_fname))):
+        # unzip
+        fname = os.path.join(dirname, zip_fname)
+        with tarfile.open(fname) as ff:
+            ff.extractall(path=dirname)
+    else:
+        pass
