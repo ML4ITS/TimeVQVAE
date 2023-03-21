@@ -130,6 +130,6 @@ dmypy.json
 
 # CUSTOM
 .idea/
-datasets/
+datasets/UCRArchive_2018
 wandb/
 saved_models/
