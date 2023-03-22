@@ -307,6 +307,9 @@ def compute_downsample_rate(input_length: int,
 
 def download_ucr_datasets(url='https://figshare.com/ndownloader/files/37909926', chunk_size=128, zip_fname='UCR_archive.zip'):
     dirname = str(get_root_dir().joinpath("datasets"))
+    if os.path.isdir(os.path.join(dirname, 'UCRArchive_2018')):
+        return None
+
     if not os.path.isdir(dirname) or not os.path.isfile(os.path.join(dirname, zip_fname)):
         if not os.path.isdir(dirname):
             os.mkdir(dirname)
