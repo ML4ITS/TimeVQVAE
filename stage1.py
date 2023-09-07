@@ -26,8 +26,8 @@ def load_args():
 
 def train_stage1(config: dict,
                  train_data_loader: DataLoader,
-                 test_data_loader: DataLoader = None,
-                 do_validate: bool = False,
+                 test_data_loader: DataLoader,
+                 do_validate: bool,
                  wandb_project_case_idx: str = ''
                  ):
     """
@@ -81,4 +81,4 @@ if __name__ == '__main__':
     train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
     # train
-    train_stage1(config, train_data_loader)
+    train_stage1(config, train_data_loader, test_data_loader, do_validate=False)
