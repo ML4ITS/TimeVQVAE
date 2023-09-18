@@ -4,143 +4,164 @@ channels:
   - nvidia
   - defaults
 dependencies:
-  - blas=1.0=mkl
-  - brotlipy=0.7.0=py39h2bbff1b_1003
-  - ca-certificates=2022.10.11=haa95532_0
-  - certifi=2022.12.7=py39haa95532_0
-  - cffi=1.15.1=py39h2bbff1b_3
-  - charset-normalizer=2.0.4=pyhd3eb1b0_0
-  - cryptography=38.0.4=py39h21b164f_0
-  - cuda=11.7.1=0
-  - cuda-cccl=11.7.91=0
-  - cuda-command-line-tools=11.7.1=0
-  - cuda-compiler=11.7.1=0
-  - cuda-cudart=11.7.99=0
-  - cuda-cudart-dev=11.7.99=0
-  - cuda-cuobjdump=11.7.91=0
-  - cuda-cupti=11.7.101=0
-  - cuda-cuxxfilt=11.7.91=0
-  - cuda-demo-suite=12.0.76=0
-  - cuda-documentation=12.0.76=0
-  - cuda-libraries=11.7.1=0
-  - cuda-libraries-dev=11.7.1=0
-  - cuda-memcheck=11.8.86=0
-  - cuda-nsight-compute=12.0.0=0
-  - cuda-nvcc=11.7.99=0
-  - cuda-nvdisasm=12.0.76=0
-  - cuda-nvml-dev=11.7.91=0
-  - cuda-nvprof=12.0.90=0
-  - cuda-nvprune=11.7.91=0
-  - cuda-nvrtc=11.7.99=0
-  - cuda-nvrtc-dev=11.7.99=0
-  - cuda-nvtx=11.7.91=0
-  - cuda-nvvp=12.0.90=0
-  - cuda-runtime=11.7.1=0
-  - cuda-sanitizer-api=12.0.90=0
-  - cuda-toolkit=11.7.1=0
-  - cuda-tools=11.7.1=0
-  - cuda-visual-tools=11.7.1=0
-  - flit-core=3.6.0=pyhd3eb1b0_0
-  - freetype=2.12.1=ha860e81_0
-  - idna=3.4=py39haa95532_0
-  - intel-openmp=2021.4.0=haa95532_3556
-  - jpeg=9e=h2bbff1b_0
-  - lerc=3.0=hd77b12b_0
-  - libcublas=11.10.3.66=0
-  - libcublas-dev=11.10.3.66=0
-  - libcufft=10.7.2.124=0
-  - libcufft-dev=10.7.2.124=0
-  - libcurand=10.3.1.50=0
-  - libcurand-dev=10.3.1.50=0
-  - libcusolver=11.4.0.1=0
-  - libcusolver-dev=11.4.0.1=0
-  - libcusparse=11.7.4.91=0
-  - libcusparse-dev=11.7.4.91=0
-  - libdeflate=1.8=h2bbff1b_5
-  - libnpp=11.7.4.75=0
-  - libnpp-dev=11.7.4.75=0
-  - libnvjpeg=11.8.0.2=0
-  - libnvjpeg-dev=11.8.0.2=0
-  - libpng=1.6.37=h2a8f88b_0
-  - libtiff=4.5.0=h8a3f274_0
-  - libuv=1.40.0=he774522_0
-  - libwebp=1.2.4=h2bbff1b_0
-  - libwebp-base=1.2.4=h2bbff1b_0
-  - lz4-c=1.9.4=h2bbff1b_0
-  - mkl=2021.4.0=haa95532_640
-  - mkl-service=2.4.0=py39h2bbff1b_0
-  - mkl_fft=1.3.1=py39h277e83a_0
-  - mkl_random=1.2.2=py39hf11a4ad_0
-  - nsight-compute=2022.4.0.15=0
-  - numpy=1.23.5=py39h3b20f71_0
-  - numpy-base=1.23.5=py39h4da318b_0
-  - openssl=1.1.1s=h2bbff1b_0
-  - pillow=9.3.0=py39hdc2b20a_1
-  - pip=22.3.1=py39haa95532_0
-  - pycparser=2.21=pyhd3eb1b0_0
-  - pyopenssl=22.0.0=pyhd3eb1b0_0
-  - pysocks=1.7.1=py39haa95532_0
-  - python=3.9.16=h6244533_0
-  - pytorch=1.13.1=py3.9_cuda11.7_cudnn8_0
-  - pytorch-cuda=11.7=h67b0de4_1
-  - pytorch-mutex=1.0=cuda
-  - requests=2.28.1=py39haa95532_0
-  - setuptools=65.6.3=py39haa95532_0
-  - six=1.16.0=pyhd3eb1b0_1
-  - sqlite=3.40.1=h2bbff1b_0
-  - tk=8.6.12=h2bbff1b_0
-  - typing_extensions=4.4.0=py39haa95532_0
-  - tzdata=2022g=h04d1e81_0
-  - urllib3=1.26.14=py39haa95532_0
-  - vc=14.2=h21ff451_1
-  - vs2015_runtime=14.27.29016=h5e58377_2
-  - wheel=0.37.1=pyhd3eb1b0_0
-  - win_inet_pton=1.1.0=py39haa95532_0
-  - wincertstore=0.2=py39haa95532_2
-  - xz=5.2.10=h8cc25b3_1
-  - zlib=1.2.13=h8cc25b3_0
-  - zstd=1.5.2=h19a0ad4_0
+  - blas=1.0
+  - brotlipy=0.7.0
+  - ca-certificates=2022.10.11
+  - certifi=2022.12.7
+  - cffi=1.15.1
+  - charset-normalizer=2.0.4
+  - cryptography=38.0.4
+  - cuda=11.7.1
+  - cuda-cccl=11.7.91
+  - cuda-command-line-tools=11.7.1
+  - cuda-compiler=11.7.1
+  - cuda-cudart=11.7.99
+  - cuda-cudart-dev=11.7.99
+  - cuda-cuobjdump=11.7.91
+  - cuda-cupti=11.7.101
+  - cuda-cuxxfilt=11.7.91
+  - cuda-demo-suite=12.0.76
+  - cuda-documentation=12.0.76
+  - cuda-libraries=11.7.1
+  - cuda-libraries-dev=11.7.1
+  - cuda-memcheck=11.8.86
+  - cuda-nsight-compute=12.0.0
+  - cuda-nvcc=11.7.99
+  - cuda-nvdisasm=12.0.76
+  - cuda-nvml-dev=11.7.91
+  - cuda-nvprof=12.0.90
+  - cuda-nvprune=11.7.91
+  - cuda-nvrtc=11.7.99
+  - cuda-nvrtc-dev=11.7.99
+  - cuda-nvtx=11.7.91
+  - cuda-nvvp=12.0.90
+  - cuda-runtime=11.7.1
+  - cuda-sanitizer-api=12.0.90
+  - cuda-toolkit=11.7.1
+  - cuda-tools=11.7.1
+  - cuda-visual-tools=11.7.1
+  - flit-core=3.6.0
+  - freetype=2.12.1
+  - idna=3.4
+  - intel-openmp=2021.4.0
+  - jpeg=9e
+  - lerc=3.0
+  - libcublas=11.10.3.66
+  - libcublas-dev=11.10.3.66
+  - libcufft=10.7.2.124
+  - libcufft-dev=10.7.2.124
+  - libcurand=10.3.1.50
+  - libcurand-dev=10.3.1.50
+  - libcusolver=11.4.0.1
+  - libcusolver-dev=11.4.0.1
+  - libcusparse=11.7.4.91
+  - libcusparse-dev=11.7.4.91
+  - libdeflate=1.8
+  - libnpp=11.7.4.75
+  - libnpp-dev=11.7.4.75
+  - libnvjpeg=11.8.0.2
+  - libnvjpeg-dev=11.8.0.2
+  - libpng=1.6.37
+  - libtiff=4.5.0
+  - libuv=1.40.0
+  - libwebp=1.2.4
+  - libwebp-base=1.2.4
+  - lz4-c=1.9.4
+  - mkl=2021.4.0
+  - mkl-service=2.4.0
+  - mkl_fft=1.3.1
+  - mkl_random=1.2.2
+  - nsight-compute=2022.4.0.15
+  - numpy=1.23.5
+  - numpy-base=1.23.5
+  - openssl=1.1.1s
+  - pillow=9.3.0
+  - pip=22.3.1
+  - pycparser=2.21
+  - pyopenssl=22.0.0
+  - pysocks=1.7.1
+  - python=3.9.16
+  - pytorch=1.13.1
+  - pytorch-cuda=11.7
+  - pytorch-mutex=1.0
+  - requests=2.28.1
+  - setuptools=65.6.3
+  - six=1.16.0
+  - sqlite=3.40.1
+  - tk=8.6.12
+  - typing_extensions=4.4.0
+  - tzdata=2022g
+  - urllib3=1.26.14
+  - vc=14.2
+  - vs2015_runtime=14.27.29016
+  - wheel=0.37.1
+  - win_inet_pton=1.1.0
+  - wincertstore=0.2
+  - xz=5.2.10
+  - zlib=1.2.13
+  - zstd=1.5.2
   - pip:
     - aiohttp==3.8.3
     - aiosignal==1.3.1
     - appdirs==1.4.4
+    - asttokens==2.2.1
     - async-timeout==4.0.2
     - attrs==22.2.0
+    - backcall==0.2.0
     - click==8.1.3
     - colorama==0.4.6
+    - comm==0.1.3
     - contourpy==1.0.7
     - cycler==0.11.0
+    - debugpy==1.6.7
     - decorator==5.1.1
     - deprecated==1.2.13
     - docker-pycreds==0.4.0
     - einops==0.6.0
+    - executing==1.2.0
     - fonttools==4.38.0
     - frozenlist==1.3.3
     - fsspec==2023.1.0
     - gitdb==4.0.10
     - gitpython==3.1.30
     - greenlet==2.0.1
+    - importlib-metadata==6.4.1
+    - ipykernel==6.22.0
+    - ipython==8.12.0
+    - jedi==0.18.2
     - joblib==1.2.0
+    - jupyter-client==8.2.0
+    - jupyter-core==5.3.0
     - kiwisolver==1.4.4
     - lightning-utilities==0.5.0
     - llvmlite==0.39.1
     - lxml==4.9.2
     - matplotlib==3.6.3
+    - matplotlib-inline==0.1.6
     - multidict==6.0.4
+    - nest-asyncio==1.5.6
     - numba==0.56.4
     - obspy==1.4.0
     - opencv-python-headless==4.5.3.56
     - packaging==23.0
     - pandas==1.5.3
+    - parso==0.8.3
     - pathtools==0.1.2
     - patsy==0.5.3
+    - pickleshare==0.7.5
+    - platformdirs==3.2.0
+    - prompt-toolkit==3.0.38
     - protobuf==3.20.1
     - psutil==5.9.4
+    - pure-eval==0.2.2
+    - pygments==2.15.0
     - pyparsing==3.0.9
     - python-dateutil==2.8.2
     - pytorch-lightning==1.9.0
     - pytz==2022.7.1
+    - pywin32==306
     - pyyaml==6.0
+    - pyzmq==25.0.2
     - scikit-learn==1.2.0
     - scipy==1.10.0
     - seaborn==0.12.2
@@ -149,6 +170,7 @@ dependencies:
     - sktime==0.15.1
     - smmap==5.0.0
     - sqlalchemy==1.4.46
+    - stack-data==0.6.2
     - statsmodels==0.13.5
     - supervised-fcn==1.7.8
     - tensorboardx==2.5.1
@@ -157,10 +179,14 @@ dependencies:
     - torchaudio==0.13.1
     - torchmetrics==0.11.0
     - torchvision==0.14.1
+    - tornado==6.2
     - tqdm==4.64.1
+    - traitlets==5.9.0
     - wandb==0.13.9
+    - wcwidth==0.2.6
     - wget==3.2
     - wrapt==1.14.1
     - x-transformers==1.7.15
     - yarl==1.8.2
-prefix: C:\Users\dslee\anaconda3\envs\timevqvae-ad
+    - zipp==3.15.0
+prefix: C:\Users\dslee\anaconda3\envs\timevqvae
