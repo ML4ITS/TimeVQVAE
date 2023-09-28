@@ -382,4 +382,8 @@ if __name__ == '__main__':
     vq = VectorQuantize(dim=D, codebook_size=512)
 
     quantize, vq_ind, vq_loss, perplexity = vq(x)
-    print(vq_ind[0])
+    print(vq_ind[0])  # `vq_ind` is a set of codebook indices; e.g., 87 denotes the 88-th code in the codebook which can be accessed by `vq.codebook[87]`.
+
+    # you can fetch the codebook weight by `vq.codebook`
+    print('vq.codebook.shape:', vq.codebook.shape)  # (codebook_size, dim)
+
