@@ -54,7 +54,7 @@ MaskGIT:
     use_rmsnorm: True
     p_unconditional: 0.2
   ESS:
-    use: True
+    use: False
     error_ratio_ma_rate: 0.3
 
 class_guidance:
