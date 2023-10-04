@@ -11,13 +11,14 @@ from generators.maskgit import MaskGIT
 
 class ExpMaskGIT(ExpBase):
     def __init__(self,
+                 dataset_name: str,
                  input_length: int,
                  config: dict,
                  n_train_samples: int,
                  n_classes: int):
         super().__init__()
         self.config = config
-        self.maskgit = MaskGIT(input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
+        self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
         self.T_max = config['trainer_params']['max_epochs']['stage2'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage2']) + 1)
 
     def forward(self, x):

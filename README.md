@@ -50,10 +50,10 @@ $ python preprocessing/preprocess_ucr.py
 ### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```commandline
-$ python stage1.py   
+$ python stage1.py --dataset_names CBF --gpu_device_idx 0
 ```
 ```commandline
-$ python stage2.py   
+$ python stage2.py --dataset_names CBF --gpu_device_idx 0
 ```
 Note that you need to specify a dataset of your interest in `configs/config.yaml`.
 
@@ -85,8 +85,30 @@ Note that the pretrained models are automatically downloaded within the notebook
 ## Remarks
 * The full result tables for FID, IS, and CAS are available in `results/`.
 
+
+## Updates
+
+### Enhanced Sampling Scheme [2]
+ We have published a [follow-up paper](https://arxiv.org/abs/2309.07945) [2] that enhances the sampling process by resolving its  existing limitations, which in turn results in considerably higher fidelity.
+To be more precise, we first sample a token set with a naive iterative decoding (existing sampling process) and remove the less-likely tokens, and resample the tokens with a better realism approach for tokens.
+The figure below illustrates the overview of [2].
+<p align="center">
+<img src=".fig/proposed_sampling_strategy_overview.png" alt="" width=100% height=100%>
+</p>
+
+The visual results are presented in the following figure:
+<p align="center">
+<img src=".fig/unconditional_sampling_visual_inspection.png" alt="" width=100% height=100%>
+</p>
+
+:star: We have included the Enhanced Sampling Scheme from [2] in this repository. 
+We can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`.
+
+
+
 ## Citation
 ```
+[1]
 @inproceedings{lee2023vector,
   title={Vector Quantized Time Series Generation with a Bidirectional Prior Model},
   author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
@@ -94,5 +116,13 @@ Note that the pretrained models are automatically downloaded within the notebook
   pages={7665--7693},
   year={2023},
   organization={PMLR}
+}
+
+[2]
+@article{lee2023masked,
+  title={Masked Generative Modeling with Enhanced Sampling Scheme},
+  author={Lee, Daesoo and Aune, Erlend and Malacarne, Sara},
+  journal={arXiv preprint arXiv:2309.07945},
+  year={2023}
 }
 ```

@@ -1,5 +1,4 @@
 dataset:
-  dataset_name: 'CBF'
   in_channels: 1
   data_scaling: True
   batch_sizes:
@@ -12,8 +11,6 @@ exp_params:
   weight_decay: 0.00001
 
 trainer_params:
-  gpus:
-    - 0
   max_epochs:
     stage1: 2000
     stage2: 10000
@@ -56,6 +53,9 @@ MaskGIT:
     ff_mult: 1
     use_rmsnorm: True
     p_unconditional: 0.2
+  ESS:
+    use: False
+    error_ratio_ma_rate: 0.3
 
 class_guidance:
   guidance_scale: 1.

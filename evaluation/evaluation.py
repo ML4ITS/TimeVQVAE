@@ -33,6 +33,7 @@ class Evaluation(object):
     - t-SNE
     """
     def __init__(self, subset_dataset_name: str, gpu_device_index: int, config: dict, batch_size: int = 256):
+        self.subset_dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
         self.batch_size = batch_size
         self.config = config
@@ -52,17 +53,16 @@ class Evaluation(object):
         assert kind in ['unconditional', 'conditional']
 
         # build
-        maskgit = MaskGIT(input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
+        maskgit = MaskGIT(self.subset_dataset_name, input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
 
         # load
-        dataset_name = self.config['dataset']['dataset_name']
-        fname = f'maskgit-{dataset_name}.ckpt'
+        fname = f'maskgit-{self.subset_dataset_name}.ckpt'
         try:
             ckpt_fname = os.path.join('saved_models', fname)
-            maskgit.load_state_dict(torch.load(ckpt_fname))
+            maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
         except FileNotFoundError:
             ckpt_fname = Path(tempfile.gettempdir()).joinpath(fname)
-            maskgit.load_state_dict(torch.load(ckpt_fname))
+            maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
 
         # inference mode
         maskgit.eval()
