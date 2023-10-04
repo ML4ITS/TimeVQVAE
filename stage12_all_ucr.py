@@ -21,7 +21,6 @@ def load_args():
     parser.add_argument('--n_dataset_partitions', type=int, help='used to partition all the subset datasets into N groups so that each group can be run separately.', default=1)
     parser.add_argument('--partition_idx', type=int, help='selects one partitions among the N partitions; {0, 1, ..., n_dataset_partitions-1}', default=0)
     parser.add_argument('--data_summary_ucr_condition_query', type=str, help="query to condition `data_summary_ucr_condition_query` to narrow target subset datasets.", default='')
-    parser.add_argument('--wandb_project_case_idx', type=str, help="case index to be logged in wandb's project name.", default='')
     return parser.parse_args()
 
 
@@ -29,9 +28,6 @@ if __name__ == '__main__':
     # load config
     args = load_args()
     config = load_yaml_param_settings(args.config)
-
-    # pre-settings
-    config['trainer_params']['gpus'] = [args.gpu_device_idx]
 
     # run
     dataset_names = get_target_ucr_dataset_names(args)
@@ -48,5 +44,5 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage1(config, train_data_loader, wandb_project_case_idx=args.wandb_project_case_idx)
-        train_stage2(config, train_data_loader, wandb_project_case_idx=args.wandb_project_case_idx)
+        train_stage1(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)
+        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=False)

@@ -50,10 +50,10 @@ $ python preprocessing/preprocess_ucr.py
 ### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```commandline
-$ python stage1.py   
+$ python stage1.py --dataset_names CBF --gpu_device_idx 0
 ```
 ```commandline
-$ python stage2.py   
+$ python stage2.py --dataset_names CBF --gpu_device_idx 0
 ```
 Note that you need to specify a dataset of your interest in `configs/config.yaml`.
 

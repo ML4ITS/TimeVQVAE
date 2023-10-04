@@ -3,8 +3,8 @@ Stage2: prior learning
 
 run `python stage2.py`
 """
-import copy
 from argparse import ArgumentParser
+import copy
 
 import torch
 import wandb
@@ -15,6 +15,7 @@ from preprocessing.data_pipeline import build_data_pipeline
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR
+import pandas as pd
 
 from experiments.exp_maskgit import ExpMaskGIT
 from evaluation.evaluation import Evaluation
@@ -33,39 +34,21 @@ def load_args():
 def train_stage2(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
-                 test_data_loader: DataLoader,
                  gpu_device_idx,
-                 do_validate: bool,
                  ):
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
-    project_name = 'TimeVQVAE-stage2'
-
-    # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
     train_exp = ExpMaskGIT(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
-    wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
-    trainer = pl.Trainer(logger=wandb_logger,
-                         enable_checkpointing=False,
-                         callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage2'],
-                         devices=[gpu_device_idx,],
-                         accelerator='gpu')
-    trainer.fit(train_exp,
-                train_dataloaders=train_data_loader,
-                val_dataloaders=test_data_loader if do_validate else None
-                )
+    wandb_logger = WandbLogger(project='TimeVQVAE-stage2', name=None, config=config_)
 
     # additional log
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb.log({'n_trainable_params:': n_trainable_params})
-
-    print('saving the model...')
-    save_model({'maskgit': train_exp.maskgit}, id=config['dataset']['dataset_name'])
 
     # test
     print('evaluating...')
@@ -92,16 +75,25 @@ if __name__ == '__main__':
     args = load_args()
     config = load_yaml_param_settings(args.config)
 
-    # config
-    dataset_names = args.dataset_names
+    # dataset names
+    if len(args.dataset_names) == 0:
+        data_summary_ucr = pd.read_csv(get_root_dir().joinpath('datasets', 'DataSummary_UCR.csv'))
+        dataset_names = data_summary_ucr['Name'].tolist()
+    else:
+        dataset_names = args.dataset_names
+    print('dataset_names:', dataset_names)
 
-    # run
     for dataset_name in dataset_names:
+        print('dataset_name:', dataset_name)
+
         # data pipeline
         dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
         batch_size = config['dataset']['batch_sizes']['stage2']
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=False)
+        train_stage2(config, dataset_name, train_data_loader, args.gpu_device_idx)
+
+        # clean memory
+        torch.cuda.empty_cache()
 

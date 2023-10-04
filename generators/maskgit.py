@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import tempfile
 from typing import Union
+from collections import deque
 
 from einops import repeat, rearrange
 from typing import Callable
@@ -24,6 +25,7 @@ class MaskGIT(nn.Module):
     """
 
     def __init__(self,
+                 dataset_name: str,
                  input_length: int,
                  choice_temperatures: dict,
                  stochastic_sampling: int,
@@ -57,7 +59,6 @@ class MaskGIT(nn.Module):
         self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # load trained models for encoder, decoder, and vq_models
-        dataset_name = self.config['dataset']['dataset_name']
         self.load(self.encoder_l, get_root_dir().joinpath('saved_models'), f'encoder_l-{dataset_name}.ckpt')
         self.load(self.decoder_l, get_root_dir().joinpath('saved_models'), f'decoder_l-{dataset_name}.ckpt')
         self.load(self.vq_model_l, get_root_dir().joinpath('saved_models'), f'vq_model_l-{dataset_name}.ckpt')
@@ -201,6 +202,12 @@ class MaskGIT(nn.Module):
         return masked_tokens.to(torch.int64)
 
     def mask_by_random_topk(self, mask_len, probs, temperature=1.0, device='cpu'):
+        """
+        mask_len: (b 1)
+        probs: (b n); also for the confidence scores
+
+        This version keeps `mask_len` exactly.
+        """
         def log(t, eps=1e-20):
             return torch.log(t.clamp(min=eps))
 
@@ -211,13 +218,39 @@ class MaskGIT(nn.Module):
             noise = torch.zeros_like(t).uniform_(0, 1)
             return -log(-log(noise))
 
-        confidence = torch.log(probs) + temperature * gumbel_noise(probs).to(device)  # Gumbel max trick
-        sorted_confidence, _ = torch.sort(confidence, dim=-1)
-        # Obtains cut off threshold given the mask lengths.
-        cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
-        # Masks tokens with lower confidence.
-        masking = (confidence < cut_off)
+        confidence = torch.log(probs + 1e-5) + temperature * gumbel_noise(probs).to(device)  # Gumbel max trick; 1e-5 for numerical stability; (b n)
+        mask_len_unique = int(mask_len.unique().item())
+        masking_ind = torch.topk(confidence, k=mask_len_unique, dim=-1, largest=False).indices  # (b k)
+        masking = torch.zeros_like(confidence).to(device)  # (b n)
+        for i in range(masking_ind.shape[0]):
+            masking[i, masking_ind[i].long()] = 1.
+        masking = masking.bool()
         return masking
+
+    # def mask_by_random_topk(self, mask_len, probs, temperature=1.0, device='cpu'):
+    #     """
+    #     mask_len: (b 1)
+    #     probs: (b n); also for the confidence scores
+    #     """
+    #     def log(t, eps=1e-20):
+    #         return torch.log(t.clamp(min=eps))
+    #
+    #     def gumbel_noise(t):
+    #         """
+    #         Gumbel max trick: https://neptune.ai/blog/gumbel-softmax-loss-function-guide-how-to-implement-it-in-pytorch
+    #         """
+    #         noise = torch.zeros_like(t).uniform_(0, 1)
+    #         return -log(-log(noise))
+    #
+    #     confidence = torch.log(probs) + temperature * gumbel_noise(probs).to(device)  # Gumbel max trick
+    #     sorted_confidence, _ = torch.sort(confidence, dim=-1)
+    #     # Obtains cut off threshold given the mask lengths.
+    #     cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
+    #     # Masks tokens with lower confidence.
+    #     masking = (confidence < cut_off)
+    #     # NB! it can mask more than mask_len when there are several confidence scores identical to cut_off.
+    #     # the advantage is that we can sample all the lowest scores at once.
+    #     return masking
 
     def first_pass(self,
                    s_l: torch.Tensor,
@@ -252,6 +285,14 @@ class MaskGIT(nn.Module):
 
             # Masks tokens with lower confidence.
             s_l = torch.where(masking, self.mask_token_ids['LF'], sampled_ids)  # (b n)
+
+        # use ESS (Enhanced Sampling Scheme)
+        if self.config['MaskGIT']['ESS']['use']:
+            t_star, s_star = self.critical_reverse_sampling(s_l, unknown_number_in_the_beginning_l, class_condition, 'LF')
+            s_l = self.iterative_decoding_with_self_token_critic(t_star, s_star, 'LF',
+                                                                 unknown_number_in_the_beginning_l, class_condition,
+                                                                 guidance_scale, device)
+
         return s_l
 
     def second_pass(self,
@@ -339,3 +380,162 @@ class MaskGIT(nn.Module):
             return xhat, quantize
         else:
             return xhat
+
+    def critical_reverse_sampling(self,
+                                  s: torch.Tensor,
+                                  unknown_number_in_the_beginning_l,
+                                  class_condition: Union[torch.Tensor, None],
+                                  kind: str
+                                  ):
+        """
+        s: sampled token sequence from the naive iterative decoding.
+        """
+        if kind == 'LF':
+            mask_token_ids = self.mask_token_ids['LF']
+            transformer = self.transformer_l
+            vq_model = self.vq_model_l
+        elif kind == 'HF':
+            mask_token_ids = self.mask_token_ids['HF']
+            transformer = self.transformer_h
+            vq_model = self.vq_model_h
+        else:
+            raise ValueError
+
+        # compute the confidence scores for s_T
+        # the scores are used for the step retraction by iteratively removing unrealistic tokens.
+        confidence_scores = self.compute_confidence_score(s, mask_token_ids, vq_model, transformer, class_condition)  # (b n)
+
+        # find s_{t*}
+        # t* denotes the step where unrealistic tokens have been removed.
+        t_star = 1
+        s_star = None
+        prev_error = None
+        error_ratio_hist = deque(maxlen=round(self.T * self.config['MaskGIT']['ESS']['error_ratio_ma_rate']))
+        for t in range(1, self.T)[::-1]:
+            # masking ratio according to the masking scheduler
+            ratio_t = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
+            ratio_tm1 = 1. * t / self.T  # tm1: t - 1
+            mask_ratio_t = self.gamma(ratio_t)
+            mask_ratio_tm1 = self.gamma(ratio_tm1)  # tm1: t - 1
+
+            # mask length
+            mask_len_t = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_l * mask_ratio_t), 1)
+            mask_len_tm1 = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning_l * mask_ratio_tm1), 1)
+
+            # masking matrices: {True: masking, False: not-masking}
+            masking_t = self.mask_by_random_topk(mask_len_t, confidence_scores, temperature=0., device=s.device)  # (b n)
+            masking_tm1 = self.mask_by_random_topk(mask_len_tm1, confidence_scores, temperature=0., device=s.device)  # (b n)
+            masking = ~((masking_tm1.float() - masking_t.float()).bool())  # (b n); True for everything except the area of interest with False.
+
+            # if there's no difference between t-1 and t, ends the retraction.
+            if masking_t.float().sum() == masking_tm1.float().sum():
+                t_star = t
+                s_star = torch.where(masking_t, mask_token_ids, s)  # (b n)
+                print('no difference between t-1 and t.')
+                break
+
+            # predict s_t given s_{t-1}
+            s_tm1 = torch.where(masking_tm1, mask_token_ids, s)  # (b n)
+            logits = transformer(s_tm1, class_condition=class_condition)  # (b n K)
+            s_t_hat = logits.argmax(dim=-1)  # (b n)
+
+            # leave the tokens of interest -- i.e., ds/dt -- only at t
+            s_t = torch.where(masking, mask_token_ids, s)  # (b n)
+            s_t_hat = torch.where(masking, mask_token_ids, s_t_hat)  # (b n)
+
+            # measure error: distance between z_q_t and z_q_t_hat
+            z_q_t = F.embedding(s_t[~masking], vq_model._codebook.embed)  # (b n d)
+            z_q_t_hat = F.embedding(s_t_hat[~masking], vq_model._codebook.embed)  # (b n d)
+            error = ((z_q_t - z_q_t_hat) ** 2).mean().cpu().detach().item()
+
+            # error ratio
+            if t + 1 == self.T:
+                error_ratio_ma = 0.
+                prev_error = error
+            else:
+                error_ratio = error / (prev_error + 1e-5)
+                error_ratio_hist.append(error_ratio)
+                error_ratio_ma = np.mean(error_ratio_hist)
+                print(f't:{t} | error:{round(error, 6)} | error_ratio_ma:{round(error_ratio_ma, 6)}')
+                prev_error = error
+
+            # stopping criteria
+            stopping_threshold = 1.0
+            if error_ratio_ma > stopping_threshold and (t + 1 != self.T):
+                t_star = t
+                s_star = torch.where(masking_t, mask_token_ids, s)  # (b n)
+                print('stopped by `error_ratio_ma > threshold`.')
+                break
+            if t == 1:
+                t_star = t
+                s_star = torch.where(masking_t, mask_token_ids, s)  # (b n)
+                print('t_star has reached t=1.')
+                break
+        print('t_star:', t_star)
+        return t_star, s_star
+
+    def iterative_decoding_with_self_token_critic(self,
+                                                  t_star,
+                                                  s_star,
+                                                  kind: str,
+                                                  unknown_number_in_the_beginning,
+                                                  class_condition: Union[torch.Tensor, None],
+                                                  guidance_scale: float,
+                                                  device,
+                                                  ):
+        if kind == 'LF':
+            mask_token_ids = self.mask_token_ids['LF']
+            transformer = self.transformer_l
+            vq_model = self.vq_model_l
+            choice_temperature = self.choice_temperature_l
+        elif kind == 'HF':
+            mask_token_ids = self.mask_token_ids['HF']
+            transformer = self.transformer_h
+            vq_model = self.vq_model_h
+            choice_temperature = self.choice_temperature_h
+        else:
+            raise ValueError
+
+        s = s_star
+        for t in range(t_star, self.T):
+            logits = transformer(s, class_condition=class_condition)  # (b n codebook_size) == (b n K)
+            if isinstance(class_condition, torch.Tensor):
+                logits_null = transformer(s, class_condition=None)
+                logits = logits_null + guidance_scale * (logits - logits_null)
+            sampled_ids = torch.distributions.categorical.Categorical(logits=logits).sample()  # (b n)
+
+            # create masking according to `t`
+            ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
+            mask_ratio = self.gamma(ratio)
+
+            # compute the confidence scores for s_t
+            confidence_scores = self.compute_confidence_score(sampled_ids, mask_token_ids, vq_model, transformer, class_condition)  # (b n)
+
+            mask_len = torch.unsqueeze(torch.floor(unknown_number_in_the_beginning * mask_ratio), 1)  # number of tokens that are to be masked;  (b,)
+            mask_len = torch.clip(mask_len, min=0.)  # `mask_len` should be equal or larger than zero.
+
+            # Adds noise for randomness
+            masking = self.mask_by_random_topk(mask_len, confidence_scores, temperature=choice_temperature * (1. - ratio), device=device)
+
+            # Masks tokens with lower confidence.
+            s = torch.where(masking, mask_token_ids, sampled_ids)  # (b n)
+        return s
+
+    def compute_confidence_score(self, s, mask_token_ids, vq_model, transformer, class_condition):
+        confidence_scores = torch.zeros_like(s).float()  # (b n)
+        for n in range(confidence_scores.shape[-1]):
+            s_m = copy.deepcopy(s)  # (b n)
+            s_m[:, n] = mask_token_ids  # (b n); masking the n-th token to measure the confidence score for that token.
+            logits = transformer(s_m, class_condition=class_condition)  # (b n K)
+            logits = torch.nn.functional.softmax(logits, dim=-1)  # (b n K)
+
+            true_tokens = s[:, n]  # (b,)
+            logits = logits[:, n]  # (b, K)
+            pred_tokens = logits.argmax(dim=-1)  # (b,)
+
+            z_q_true = vq_model._codebook.embed[true_tokens]  # (b, dim)
+            z_q_pred = vq_model._codebook.embed[pred_tokens]  # (b, dim)
+            dist = torch.sum((z_q_true - z_q_pred) ** 2, dim=-1)  # (b,)
+            confidence_scores[:, n] = -1 * dist  # confidence score for the n-th token
+        confidence_scores = torch.nn.functional.softmax(confidence_scores, dim=-1)  # (b n)
+        return confidence_scores
