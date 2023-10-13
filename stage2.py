@@ -65,7 +65,7 @@ def train_stage2(config: dict,
     wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
-    save_model({'maskgit': train_exp.maskgit}, id=config['dataset']['dataset_name'])
+    save_model({'maskgit': train_exp.maskgit}, id=dataset_name)
 
     # test
     print('evaluating...')
