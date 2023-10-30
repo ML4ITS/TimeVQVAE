@@ -1,7 +1,5 @@
 """
-Stage2: prior learning
-
-run `python stage2.py`
+train a domain shifter
 """
 import copy
 from argparse import ArgumentParser
@@ -16,7 +14,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 
-from experiments.exp_maskgit import ExpMaskGIT
+from experiments.exp_domain_shifter import ExpDomainShifter
 from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model
 
@@ -30,7 +28,7 @@ def load_args():
     return parser.parse_args()
 
 
-def train_stage2(config: dict,
+def train_stage3(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
@@ -40,22 +38,22 @@ def train_stage2(config: dict,
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
-    project_name = 'TimeVQVAE-stage2'
+    project_name = 'TimeVQVAE-stage3'
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpMaskGIT(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
+    train_exp = ExpDomainShifter(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
     wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage2'],
+                         max_epochs=config['trainer_params']['max_epochs']['stage3'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage2'] / 10),)
+                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage3'] / 10),)
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
                 val_dataloaders=test_data_loader if do_validate else None
@@ -66,7 +64,7 @@ def train_stage2(config: dict,
     wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
-    save_model({'maskgit': train_exp.maskgit}, id=dataset_name)
+    save_model({'domain_shifter': train_exp.domain_shifter}, id=dataset_name)
 
     # test
     print('evaluating...')
@@ -105,8 +103,8 @@ if __name__ == '__main__':
     for dataset_name in dataset_names:
         # data pipeline
         dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
-        batch_size = config['dataset']['batch_sizes']['stage2']
+        batch_size = config['dataset']['batch_sizes']['stage3']
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)
+        train_stage3(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)

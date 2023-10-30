@@ -44,7 +44,7 @@ def train_stage2(config: dict,
     train_exp = ExpMaskGIT(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
-    wandb_logger = WandbLogger(project='TimeVQVAE-stage2', name=None, config=config_)
+    wandb_logger = WandbLogger(project='TimeVQVAE-evaluation', name=None, config=config_)
 
     # additional log
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
@@ -52,21 +52,26 @@ def train_stage2(config: dict,
 
     # test
     print('evaluating...')
-    input_length = train_data_loader.dataset.X.shape[-1]
-    n_classes = len(np.unique(train_data_loader.dataset.Y))
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
-    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], config['dataset']['batch_sizes']['stage2']),
-                                    input_length,
-                                    n_classes,
-                                    'unconditional')
-    z_test, z_gen = evaluation.compute_z(x_gen)
-    fid, (z_test, z_gen) = evaluation.fid_score(z_test, z_gen)
+    min_num_gen_samples = 1024  # large enough to capture the distribution
+    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
+    z_test = evaluation.compute_z_test()
+    z_gen = evaluation.compute_z_gen(x_gen)
+    fid = evaluation.fid_score(z_test, z_gen)
     IS_mean, IS_std = evaluation.inception_score(x_gen)
     wandb.log({'FID': fid, 'IS_mean': IS_mean, 'IS_std': IS_std})
 
     evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
     evaluation.log_pca(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
     evaluation.log_tsne(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+
+    # compute inherent difference between Z_train and Z_test
+    z_train = evaluation.compute_z_train_test('train')
+    fid_inherent_error = evaluation.fid_score(z_train, z_test)
+    wandb.log({'FID-inherent_error': fid_inherent_error})
+    evaluation.log_visual_inspection_train_test(min(200, evaluation.X_test.shape[0]))
+    evaluation.log_pca_ztrain_ztest(min(1000, evaluation.X_test.shape[0]), z_train, z_test)
+
     wandb.finish()
 
 

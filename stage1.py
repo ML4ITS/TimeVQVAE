@@ -50,7 +50,9 @@ def train_stage1(config: dict,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
                          max_epochs=config['trainer_params']['max_epochs']['stage1'],
                          devices=[gpu_device_idx,],
-                         accelerator='gpu')
+                         accelerator='gpu',
+                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage1'] / 10),
+                         )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
                 val_dataloaders=test_data_loader if do_validate else None
@@ -86,4 +88,4 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage1(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=False)
+        train_stage1(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)

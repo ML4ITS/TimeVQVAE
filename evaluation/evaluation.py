@@ -22,6 +22,7 @@ from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN.example_compute_FID import calculate_fid
 from supervised_FCN.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
+from generators.domain_shifter import DomainShifter
 
 
 class Evaluation(object):
@@ -45,39 +46,67 @@ class Evaluation(object):
         # load the numpy matrix of the test samples
         dataset_importer = DatasetImporterUCR(subset_dataset_name, data_scaling=True)
         self.X_test = dataset_importer.X_test[:, None, :]
-        n_fft = self.config['VQ-VAE']['n_fft']
-        self.X_test = timefreq_to_time(time_to_timefreq(torch.from_numpy(self.X_test), n_fft, 1), n_fft, 1)
-        self.X_test = self.X_test.numpy()
+        self.X_train = dataset_importer.X_train[:, None, :]
+        self.ts_len = self.X_train.shape[-1]  # time series length
+        self.n_classes = len(np.unique(dataset_importer.Y_train))
 
-    def sample(self, n_samples: int, input_length: int, n_classes: int, kind: str, class_index: int = -1):
-        assert kind in ['unconditional', 'conditional']
-
-        # build
-        maskgit = MaskGIT(self.subset_dataset_name, input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
-
-        # load
-        fname = f'maskgit-{self.subset_dataset_name}.ckpt'
+        # load maskgit
+        self.maskgit = MaskGIT(self.subset_dataset_name, self.ts_len, **self.config['MaskGIT'], config=self.config, n_classes=self.n_classes).to(self.device)
+        dataset_name = self.subset_dataset_name
+        fname = f'maskgit-{dataset_name}.ckpt'
         try:
             ckpt_fname = os.path.join('saved_models', fname)
-            maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
+            self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
         except FileNotFoundError:
             ckpt_fname = Path(tempfile.gettempdir()).joinpath(fname)
-            maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
+            self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
+        self.maskgit.eval()
 
-        # inference mode
-        maskgit.eval()
+        # load domain shifter
+        self.domain_shifter = DomainShifter(self.ts_len, 1, config['VQ-VAE']['n_fft'], config)
+        fname = f'domain_shifter-{dataset_name}.ckpt'
+        ckpt_fname = os.path.join('saved_models', fname)
+        self.domain_shifter.load_state_dict(torch.load(ckpt_fname))
+
+    def sample(self, n_samples: int, kind: str, class_index: int = -1):
+        assert kind in ['unconditional', 'conditional']
 
         # sampling
         if kind == 'unconditional':
-            x_new_l, x_new_h, x_new = unconditional_sample(maskgit, n_samples, self.device, batch_size=self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+            x_new_l, x_new_h, x_new = unconditional_sample(self.maskgit, n_samples, self.device, batch_size=self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
         elif kind == 'conditional':
-            x_new_l, x_new_h, x_new = conditional_sample(maskgit, n_samples, self.device, class_index, self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+            x_new_l, x_new_h, x_new = conditional_sample(self.maskgit, n_samples, self.device, class_index, self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
         else:
             raise ValueError
 
+        # domain shifter
+        with torch.no_grad():
+            x_new = self.domain_shifter(x_new)
+
         return x_new_l, x_new_h, x_new
 
-    def compute_z(self, X_gen: torch.Tensor) -> (np.ndarray, np.ndarray):
+    def compute_z_train_test(self, kind: str):
+        assert kind in ['train', 'test']
+        if kind == 'train':
+            self.X = self.X_train
+        elif kind == 'test':
+            self.X = self.X_test
+
+        n_samples = self.X.shape[0]
+        n_iters = n_samples // self.batch_size
+        if n_samples % self.batch_size > 0:
+            n_iters += 1
+
+        # get feature vectors
+        zs = []
+        for i in range(n_iters):
+            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
+            z = self.fcn(torch.from_numpy(self.X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            zs.append(z)
+        zs = np.concatenate(zs, axis=0)
+        return zs
+
+    def compute_z_test(self) -> (np.ndarray, np.ndarray):
         """
         It computes representation z given input x
         :param X_gen: generated X
@@ -88,22 +117,40 @@ class Evaluation(object):
         if n_samples % self.batch_size > 0:
             n_iters += 1
 
-        # get feature vectors from `X_test` and `X_gen`
-        z_test, z_gen = [], []
+        # get feature vectors from `X_test`
+        z_test = []
+        for i in range(n_iters):
+            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
+            z_t = self.fcn(torch.from_numpy(self.X_test[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            z_test.append(z_t)
+        z_test = np.concatenate(z_test, axis=0)
+        return z_test
+
+    def compute_z_gen(self, X_gen: torch.Tensor) -> (np.ndarray, np.ndarray):
+        """
+        It computes representation z given input x
+        :param X_gen: generated X
+        :return: z_test (z on X_test), z_gen (z on X_generated)
+        """
+        n_samples = X_gen.shape[0]
+        n_iters = n_samples // self.batch_size
+        if n_samples % self.batch_size > 0:
+            n_iters += 1
+
+        # get feature vectors from `X_gen`
+        z_gen = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
 
-            z_t = self.fcn(torch.from_numpy(self.X_test[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
             z_g = self.fcn(X_gen[s].float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
 
-            z_test.append(z_t)
             z_gen.append(z_g)
-        z_test, z_gen = np.concatenate(z_test, axis=0), np.concatenate(z_gen, axis=0)
-        return z_test, z_gen
+        z_gen = np.concatenate(z_gen, axis=0)
+        return z_gen
 
     def fid_score(self, z_test: np.ndarray, z_gen: np.ndarray) -> (int, (np.ndarray, np.ndarray)):
         fid = calculate_fid(z_test, z_gen)
-        return fid, (z_test, z_gen)
+        return fid
 
     def inception_score(self, X_gen: torch.Tensor):
         # assert self.X_test.shape[0] == X_gen.shape[0], "shape of `X_test` must be the same as that of `X_gen`."
@@ -133,25 +180,27 @@ class Evaluation(object):
         fig, axes = plt.subplots(2, 1, figsize=(4, 4))
         for i in sample_ind:
             axes[0].plot(self.X_test[i, 0, :], alpha=0.1)
+        axes[0].set_xticks([])
         axes[0].set_ylim(*ylim)
-        plt.grid()
+        axes[0].set_title('test samples')
 
         # `X_gen`
         sample_ind = np.random.randint(0, X_gen.shape[0], n_plot_samples)
         for i in sample_ind:
             axes[1].plot(X_gen[i, 0, :], alpha=0.1)
         axes[1].set_ylim(*ylim)
-        plt.grid()
+        axes[1].set_title('generated samples')
 
         plt.tight_layout()
         wandb.log({"visual inspection": wandb.Image(plt)})
         plt.close()
 
     def log_pca(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
+        X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
         X_gen = X_gen.cpu().numpy()
 
-        sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=False)
-        sample_ind_gen = np.random.choice(range(X_gen.shape[0]), size=n_plot_samples, replace=False)
+        sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
+        sample_ind_gen = np.random.choice(range(X_gen.shape[0]), size=n_plot_samples, replace=True)
 
         # PCA: data space
         pca = PCA(n_components=2)
@@ -181,7 +230,47 @@ class Evaluation(object):
         wandb.log({"PCA-latent_space": wandb.Image(plt)})
         plt.close()
 
+    def log_visual_inspection_train_test(self, n_plot_samples: int, ylim: tuple = (-5, 5)):
+        # `X_train`
+        sample_ind = np.random.randint(0, self.X_train.shape[0], n_plot_samples)
+        fig, axes = plt.subplots(2, 1, figsize=(4, 4))
+        for i in sample_ind:
+            axes[0].plot(self.X_train[i, 0, :], alpha=0.1)
+        axes[0].set_xticks([])
+        axes[0].set_ylim(*ylim)
+        axes[0].set_title('train samples')
+
+        # `X_test`
+        sample_ind = np.random.randint(0, self.X_test.shape[0], n_plot_samples)
+        for i in sample_ind:
+            axes[1].plot(self.X_test[i, 0, :], alpha=0.1)
+        axes[1].set_ylim(*ylim)
+        axes[1].set_title('test samples')
+
+        plt.tight_layout()
+        wandb.log({"visual inspection (X_train vs X_test)": wandb.Image(plt)})
+        plt.close()
+
+    def log_pca_ztrain_ztest(self, n_plot_samples: int, z1: np.ndarray, z2: np.ndarray):
+        sample_ind1 = np.random.choice(range(z1.shape[0]), size=n_plot_samples, replace=True)
+        sample_ind2 = np.random.choice(range(z2.shape[0]), size=n_plot_samples, replace=True)
+
+        # PCA: latent space
+        pca = PCA(n_components=2)
+        z_embedded1 = pca.fit_transform(z1[sample_ind1].squeeze())
+        z_embedded2 = pca.transform(z2[sample_ind2].squeeze())
+
+        plt.figure(figsize=(4, 4))
+        # plt.title("PCA in the representation space by the trained encoder");
+        plt.scatter(z_embedded1[:, 0], z_embedded1[:, 1], alpha=0.1, label='train')
+        plt.scatter(z_embedded2[:, 0], z_embedded2[:, 1], alpha=0.1, label='test')
+        plt.legend()
+        plt.tight_layout()
+        wandb.log({"PCA-latent_space (z_train vs z_test)": wandb.Image(plt)})
+        plt.close()
+
     def log_tsne(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
+        X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
         X_gen = X_gen.cpu().numpy()
 
         sample_ind_test = np.random.randint(0, self.X_test.shape[0], n_plot_samples)
