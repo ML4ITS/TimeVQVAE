@@ -8,6 +8,7 @@ from pathlib import Path
 
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 import wandb
 import numpy as np
 import matplotlib.pyplot as plt
@@ -33,11 +34,12 @@ class Evaluation(object):
     - PCA
     - t-SNE
     """
-    def __init__(self, subset_dataset_name: str, gpu_device_index: int, config: dict, batch_size: int = 256):
+    def __init__(self, subset_dataset_name: str, gpu_device_index: int, config: dict, batch_size: int, use_domain_shifter: bool, **kwargs):
         self.subset_dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
         self.batch_size = batch_size
         self.config = config
+        self.use_domain_shifter = use_domain_shifter
 
         # load the pretrained FCN
         self.fcn = load_pretrained_FCN(subset_dataset_name).to(self.device)
@@ -62,11 +64,14 @@ class Evaluation(object):
             self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
         self.maskgit.eval()
 
-        # load domain shifter
-        self.domain_shifter = DomainShifter(self.ts_len, 1, config['VQ-VAE']['n_fft'], config)
-        fname = f'domain_shifter-{dataset_name}.ckpt'
-        ckpt_fname = os.path.join('saved_models', fname)
-        self.domain_shifter.load_state_dict(torch.load(ckpt_fname))
+        if self.use_domain_shifter:
+            # load domain shifter
+            self.domain_shifter = DomainShifter(self.ts_len, 1, config['VQ-VAE']['n_fft'], config)
+            fname = f'domain_shifter-{dataset_name}.ckpt'
+            ckpt_fname = os.path.join('saved_models', fname)
+            self.domain_shifter.load_state_dict(torch.load(ckpt_fname))
+        else:
+            self.domain_shifter = nn.Identity()
 
     def sample(self, n_samples: int, kind: str, class_index: int = -1):
         assert kind in ['unconditional', 'conditional']

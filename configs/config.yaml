@@ -71,3 +71,8 @@ domain_shifter:
     - 8
   resnet_block_groups: 4
   attention_ups_downs: False
+
+evaluation:
+  min_num_of_generated_samples_to_compute_IS_and_FID_score: 1024
+  batch_size: 256
+  use_domain_shifter: True
