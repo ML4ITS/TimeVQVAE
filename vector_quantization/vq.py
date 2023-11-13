@@ -257,6 +257,7 @@ class VectorQuantize(nn.Module):
             accept_image_fmap=False,
             commitment_weight=1.,
             orthogonal_reg_weight=0.,
+            learnable_codebook=False,
             orthogonal_reg_active_codes_only=False,
             orthogonal_reg_max_codes=None,
             sample_codebook_temp=0.,
@@ -276,7 +277,7 @@ class VectorQuantize(nn.Module):
         self.eps = eps
         self.commitment_weight = commitment_weight
 
-        has_codebook_orthogonal_loss = orthogonal_reg_weight > 0
+        use_learnable_codebook = (orthogonal_reg_weight > 0) or learnable_codebook
         self.orthogonal_reg_weight = orthogonal_reg_weight
         self.orthogonal_reg_active_codes_only = orthogonal_reg_active_codes_only
         self.orthogonal_reg_max_codes = orthogonal_reg_max_codes
@@ -292,7 +293,7 @@ class VectorQuantize(nn.Module):
             eps=eps,
             threshold_ema_dead_code=threshold_ema_dead_code,
             use_ddp=sync_codebook,
-            learnable_codebook=has_codebook_orthogonal_loss,
+            learnable_codebook=use_learnable_codebook,
             sample_codebook_temp=sample_codebook_temp,
             emb_dropout=emb_dropout,
         )

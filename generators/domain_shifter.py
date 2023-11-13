@@ -11,6 +11,8 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from einops import rearrange, reduce
+from vector_quantization import VectorQuantize
+from utils import quantize
 
 # constants
 
@@ -337,6 +339,9 @@ class Unet1D(nn.Module):
         self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim)
         self.final_conv = nn.Conv1d(dim, self.out_dim, 1)
 
+        # self.vq_model_mid = VectorQuantize(dim * dim_mults[-1], codebook_sizes['mid'])
+        # self.vq_model_end = VectorQuantize(dim, codebook_sizes['end'], learnable_codebook=True)
+
     def forward(self, x):
         # if self.self_condition:
         #     x_self_cond = default(x_self_cond, lambda: torch.zeros_like(x))
@@ -363,6 +368,9 @@ class Unet1D(nn.Module):
         x = self.mid_attn(x)
         x = self.mid_block2(x)
 
+        # x, indices, vq_loss_mid, perplexity = quantize(x, self.vq_model_mid, transpose_channel_length_axes=True)
+        # vq_loss_mid = vq_loss_mid['loss']
+
         for block1, block2, attn, upsample in self.ups:
             h_ = F.interpolate(h.pop(), size=x.shape[-1], mode='linear', align_corners=False)
             x = torch.cat((x, h_), dim = 1)
@@ -380,7 +388,16 @@ class Unet1D(nn.Module):
         x = torch.cat((x, r), dim = 1)
 
         x = self.final_res_block(x)
-        return self.final_conv(x)
+        # x, indices, vq_loss_end, perplexity = quantize(x, self.vq_model_end, transpose_channel_length_axes=True)
+        # vq_loss_end = vq_loss_end['loss']
+        x = self.final_conv(x)
+
+        # if return_vq_output:
+        #     vq_loss = vq_loss_mid + vq_loss_end
+            # vq_loss = vq_loss_end
+            # return x, (vq_loss, indices, perplexity)
+        # else:
+        return x
 
 
 # class DomainShifter(nn.Module):
@@ -407,27 +424,54 @@ class Unet1D(nn.Module):
 #         xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
 #         return xhat_c
 
+
+
+
 class DomainShifter(nn.Module):
     def __init__(self, input_length, in_channels, n_fft, config):
         super(DomainShifter, self).__init__()
         self.n_fft = n_fft
         self.input_length = input_length
-        self.domain_shifter = Unet1D(channels=in_channels, **config['domain_shifter'])
+        self.projector = Unet1D(channels=in_channels, **config['domain_shifter'])
 
-    def forward(self, xhat):
+        # d should be kept large enough so that codes are easily distinguishable.
+        d = 32
+        self.Ds_conv1 = nn.Conv1d(1, d, kernel_size=3, stride=1, padding=1)
+        self.Ds_vq = VectorQuantize(d, config['domain_shifter']['codebook_size'], learnable_codebook=True)
+        self.Ds_conv2 = nn.Conv1d(d, 1, kernel_size=1, stride=1)
+
+    def forward_projector(self, xhat):
+        xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
+        xhat_c = self.projector(xhat)
+        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
+        return xhat_c
+
+    def forward_vq(self, xhat_c):
+        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
+        out = self.Ds_conv1(xhat_c)
+        out, indices, vq_loss, perplexity = quantize(out, self.Ds_vq, transpose_channel_length_axes=True)
+        vq_loss = vq_loss['loss']
+        out = self.Ds_conv2(out)
+        out = F.upsample(out, size=self.input_length, mode='linear', align_corners=False)
+        return out, vq_loss
+        # return xhat_c, torch.tensor([0.], requires_grad=True)
+
+    def forward(self, xhat, return_all=False):
         """
         :param xhat: (b 1 l)
         :return:
         """
-        xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
-        xhat_c = self.domain_shifter(xhat)  # (b 1 l)
-        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
-        return xhat_c
+        xhat_c = self.forward_projector(xhat)
+        xhat_cd, _ = self.forward_vq(xhat_c)
+        if return_all:
+            return xhat_c, xhat_cd
+        else:
+            return xhat_cd
 
 
 if __name__ == '__main__':
     # unet
     x = torch.rand((1, 1, 301))
-    model = Unet1D(dim = 64)
+    model = Unet1D(dim = 8)
     xhat = model(x)
     print(xhat.shape)
