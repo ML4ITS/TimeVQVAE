@@ -70,12 +70,15 @@ class ExpDomainShifter(ExpBase):
         xhat_l_stoch = self.maskgit.decode_token_ind_to_timeseries(s_l_stoch, 'LF')  # (b 1 l)
         xhat_h_stoch = self.maskgit.decode_token_ind_to_timeseries(s_h_stoch, 'HF')  # (b 1 l)
         xhat = xhat_l_stoch + xhat_h_stoch  # (b c l)
+
+        xhat_l_stoch = xhat_l_stoch.detach()
+        xhat_h_stoch = xhat_h_stoch.detach()
         xhat = xhat.detach()
 
-        xhat_c = self.domain_shifter.forward_projector(xhat)
+        xhat_c = self.domain_shifter.forward_projector(xhat, xhat_l_stoch, xhat_h_stoch)
         domain_shifter_loss = F.l1_loss(xhat_c, x)
 
-        xhat_cd, vq_loss = self.domain_shifter.forward_vq(xhat_c.detach())
+        xhat_cd, vq_loss = self.domain_shifter.forward_vq(xhat_c.detach(), xhat, xhat_l_stoch, xhat_h_stoch)
         domain_shifter_loss += F.l1_loss(xhat_cd, x) + vq_loss.mean()
 
         return domain_shifter_loss
@@ -107,7 +110,8 @@ class ExpDomainShifter(ExpBase):
             _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
             # `s_M` <- randomly-mask `s`
-            mask_ratio = np.random.uniform(0., self.config['domain_shifter']['max_mask_ratio'])
+            # mask_ratio = np.random.uniform(self.config['domain_shifter']['min_mask_ratio'], self.config['domain_shifter']['max_mask_ratio'])
+            mask_ratio = self.config['domain_shifter']['mask_ratio']  # constant masking_ratio leads to better performance in terms of FID and IS. varying masking_ratio makes the model training harder.
             s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
 
             # p_theta(s_a | s_M)
@@ -163,7 +167,8 @@ class ExpDomainShifter(ExpBase):
             _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
             # `s_M` <- randomly-mask `s`
-            mask_ratio = np.random.uniform(0., self.config['domain_shifter']['max_mask_ratio'])
+            # mask_ratio = np.random.uniform(0., self.config['domain_shifter']['max_mask_ratio'])
+            mask_ratio = self.config['domain_shifter']['mask_ratio']
             s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
 
             # p_theta(s_a | s_M)
@@ -191,7 +196,11 @@ class ExpDomainShifter(ExpBase):
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
-            x_new_c, x_new_cd = self.domain_shifter(x_new.to(x.device), return_all=True)
+            # x_new_c, x_new_cd = self.domain_shifter(x_new.to(x.device), return_all=True)
+            x_new_c, x_new_cd = self.domain_shifter(x_new.to(x.device),
+                                                    x_new_l.to(x.device),
+                                                    x_new_h.to(x.device),
+                                                    return_all=True)
             x_new_c = x_new_c.detach().cpu().numpy()
             x_new_cd = x_new_cd.detach().cpu().numpy()
 

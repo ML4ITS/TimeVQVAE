@@ -62,7 +62,9 @@ class_guidance:
   guidance_scale: 1.
 
 domain_shifter:
-  max_mask_ratio: 0.5
+#  min_mask_ratio: 0.5
+#  max_mask_ratio: 0.5
+  mask_ratio: 0.5
   dim: 8
   dim_mults:
     - 1
@@ -71,7 +73,9 @@ domain_shifter:
     - 8
   resnet_block_groups: 4
   attention_ups_downs: False
-  codebook_size: 128
+  discretizer:
+    codebook_size: 256
+    dim: 32
 
 evaluation:
   min_num_of_generated_samples_to_compute_IS_and_FID_score: 1024

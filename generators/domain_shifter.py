@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from einops import rearrange, reduce
 from vector_quantization import VectorQuantize
-from utils import quantize
+from utils import quantize, time_to_timefreq, timefreq_to_time
 
 # constants
 
@@ -73,11 +73,11 @@ class Residual(nn.Module):
 def Upsample(dim, dim_out = None):
     return nn.Sequential(
         nn.Upsample(scale_factor = 2, mode = 'nearest'),
-        nn.Conv1d(dim, default(dim_out, dim), 3, padding = 1)
+        nn.Conv1d(dim, default(dim_out, dim), 3, padding = 1, padding_mode='replicate')
     )
 
 def Downsample(dim, dim_out = None):
-    return nn.Conv1d(dim, default(dim_out, dim), 4, 2, 1)
+    return nn.Conv1d(dim, default(dim_out, dim), 4, 2, 1, padding_mode='replicate')
 
 class WeightStandardizedConv2d(nn.Conv1d):
     """
@@ -314,7 +314,7 @@ class Unet1D(nn.Module):
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_in, LinearAttention(dim_in))) if attention_ups_downs else nn.Identity(),
-                Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1)
+                Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1, padding_mode='replicate')
             ]))
 
         mid_dim = dims[-1]
@@ -329,7 +329,7 @@ class Unet1D(nn.Module):
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_out, LinearAttention(dim_out))) if attention_ups_downs else nn.Identity(),
-                Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1)
+                Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1, padding_mode='replicate')
             ]))
         self.last_up = Upsample(dim_in, dim_in)
 
@@ -425,44 +425,92 @@ class Unet1D(nn.Module):
 #         return xhat_c
 
 
+class Discretizer(nn.Module):
+    def __init__(self, codebook_size, dim, input_length, **kwargs):
+        super(Discretizer, self).__init__()
+        """
+        - dim: it should be kept large enough so that codes are easily distinguishable. 
+        """
+        self.input_length = input_length
+
+        self.in_conv = nn.Sequential(nn.Conv1d(1, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                     nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                     nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                     nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                     )
+        # self.in_conv = nn.Conv1d(1, dim, kernel_size=1, stride=1)
+        self.vq = VectorQuantize(dim, codebook_size)
+        self.out_conv = nn.Sequential(nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                      nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                      nn.Conv1d(dim, dim, kernel_size=3, stride=1, padding=1, padding_mode='replicate'),
+                                      nn.Conv1d(dim, 1, kernel_size=3, stride=1, padding=1, padding_mode='replicate')
+                                      )
+        # self.out_conv = nn.Conv1d(dim, 1, kernel_size=1, stride=1)
+
+    def forward(self, xhat_c, xhat, xhat_l, xhat_h):
+        """
+        :param xhat_c: (b 1 l)
+        :return:
+        """
+        # print('xhat_c.shape:', xhat_c.shape)
+        # print('xhat.shape:', xhat.shape)
+        # print('xhat_l.shape:', xhat_l.shape)
+        # print('xhat_h.shape:', xhat_h.shape)
+        # input = torch.cat((xhat_c, xhat, xhat_l, xhat_h), dim=1)
+        input = xhat_c
+
+        out = F.upsample(input, size=self.input_length, mode='linear', align_corners=False)
+        out = self.in_conv(out)
+        out, indices, vq_loss, perplexity = quantize(out, self.vq, transpose_channel_length_axes=True)
+        vq_loss = vq_loss['loss']
+        out = self.out_conv(out)
+        out = F.upsample(out, size=self.input_length, mode='linear', align_corners=False)
+        return out, vq_loss
+
+    # def forward(self, xhat_c):
+    #     """
+    #     :param xhat_c: (b 1 l)
+    #     :return:
+    #     """
+    #     out = time_to_timefreq(xhat_c, self.n_fft, C=1)  # (b c h w)
+    #     width, height = out.shape[2], out.shape[3]
+    #     out = self.in_conv(out)
+    #     out, indices, vq_loss, perplexity = quantize(out, self.vq)
+    #     vq_loss = vq_loss['loss']
+    #     out = self.out_conv(out)  # (b c h w)
+    #     out = F.upsample(out, size=(width, height), mode='bilinear', align_corners=False)  # (b c h w)
+    #     out = timefreq_to_time(out, self.n_fft, C=1)  # (b 1 l)
+    #     out = F.upsample(out, size=self.input_length, mode='linear', align_corners=False)  # (b 1 l)
+    #     return out, vq_loss
 
 
 class DomainShifter(nn.Module):
     def __init__(self, input_length, in_channels, n_fft, config):
         super(DomainShifter, self).__init__()
-        self.n_fft = n_fft
+        # self.n_fft = n_fft
         self.input_length = input_length
-        self.projector = Unet1D(channels=in_channels, **config['domain_shifter'])
+        self.projector = Unet1D(channels=3*in_channels, **config['domain_shifter'], out_dim=1)
+        self.discretizer = Discretizer(**config['domain_shifter']['discretizer'], input_length=input_length)
 
-        # d should be kept large enough so that codes are easily distinguishable.
-        d = 32
-        self.Ds_conv1 = nn.Conv1d(1, d, kernel_size=3, stride=1, padding=1)
-        self.Ds_vq = VectorQuantize(d, config['domain_shifter']['codebook_size'], learnable_codebook=True)
-        self.Ds_conv2 = nn.Conv1d(d, 1, kernel_size=1, stride=1)
-
-    def forward_projector(self, xhat):
-        xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
-        xhat_c = self.projector(xhat)
+    def forward_projector(self, xhat, xhat_l, xhat_h):
+        xhat_comb = torch.cat((xhat, xhat_l, xhat_h), dim=1)  # (b 3c l)
+        xhat_comb = F.upsample(xhat_comb, size=self.input_length, mode='linear', align_corners=False)
+        xhat_c = self.projector(xhat_comb)
         xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
         return xhat_c
 
-    def forward_vq(self, xhat_c):
-        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
-        out = self.Ds_conv1(xhat_c)
-        out, indices, vq_loss, perplexity = quantize(out, self.Ds_vq, transpose_channel_length_axes=True)
-        vq_loss = vq_loss['loss']
-        out = self.Ds_conv2(out)
-        out = F.upsample(out, size=self.input_length, mode='linear', align_corners=False)
+    def forward_vq(self, xhat_c, xhat, xhat_l, xhat_h):
+        out, vq_loss = self.discretizer(xhat_c, xhat, xhat_l, xhat_h)
         return out, vq_loss
         # return xhat_c, torch.tensor([0.], requires_grad=True)
 
-    def forward(self, xhat, return_all=False):
+    def forward(self, xhat, xhat_l, xhat_h, return_all=False):
         """
         :param xhat: (b 1 l)
         :return:
         """
-        xhat_c = self.forward_projector(xhat)
-        xhat_cd, _ = self.forward_vq(xhat_c)
+        xhat_c = self.forward_projector(xhat, xhat_l, xhat_h)
+        xhat_cd, _ = self.forward_vq(xhat_c, xhat, xhat_l, xhat_h)
         if return_all:
             return xhat_c, xhat_cd
         else:
