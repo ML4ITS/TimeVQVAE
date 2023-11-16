@@ -86,7 +86,7 @@ class Evaluation(object):
 
         # domain shifter
         with torch.no_grad():
-            x_new = self.domain_shifter(x_new, x_new_l, x_new_h)
+            x_new = self.domain_shifter(x_new)
 
         return x_new_l, x_new_h, x_new
 

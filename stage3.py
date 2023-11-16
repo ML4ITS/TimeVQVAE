@@ -54,7 +54,7 @@ def train_stage3(config: dict,
                          max_epochs=config['trainer_params']['max_epochs']['stage3'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage3'] / 20),)
+                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage3'] / 40),)
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
                 val_dataloaders=test_data_loader if do_validate else None

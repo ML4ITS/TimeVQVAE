@@ -6,13 +6,15 @@ import math
 from functools import partial
 from collections import namedtuple
 
+import numpy as np
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
 
-from einops import rearrange, reduce
+from einops import rearrange, reduce, repeat
 from vector_quantization import VectorQuantize
 from utils import quantize, time_to_timefreq, timefreq_to_time
+from encoder_decoders.vq_vae_encdec1d import VQVAEEncoder, VQVAEDecoder
 
 # constants
 
@@ -73,11 +75,11 @@ class Residual(nn.Module):
 def Upsample(dim, dim_out = None):
     return nn.Sequential(
         nn.Upsample(scale_factor = 2, mode = 'nearest'),
-        nn.Conv1d(dim, default(dim_out, dim), 3, padding = 1, padding_mode='replicate')
+        nn.Conv1d(dim, default(dim_out, dim), 3, padding = 1, padding_mode='zeros')
     )
 
 def Downsample(dim, dim_out = None):
-    return nn.Conv1d(dim, default(dim_out, dim), 4, 2, 1, padding_mode='replicate')
+    return nn.Conv1d(dim, default(dim_out, dim), 4, 2, 1, padding_mode='zeros')
 
 class WeightStandardizedConv2d(nn.Conv1d):
     """
@@ -314,7 +316,7 @@ class Unet1D(nn.Module):
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_in, LinearAttention(dim_in))) if attention_ups_downs else nn.Identity(),
-                Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1, padding_mode='replicate')
+                Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1, padding_mode='zeros')
             ]))
 
         mid_dim = dims[-1]
@@ -329,7 +331,7 @@ class Unet1D(nn.Module):
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 Residual(PreNorm(dim_out, LinearAttention(dim_out))) if attention_ups_downs else nn.Identity(),
-                Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1, padding_mode='replicate')
+                Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1, padding_mode='zeros')
             ]))
         self.last_up = Upsample(dim_in, dim_in)
 
@@ -484,37 +486,129 @@ class Discretizer(nn.Module):
     #     return out, vq_loss
 
 
+class Sum(nn.Module):
+    def forward(self, x):
+        return torch.sum(x, dim=1, keepdim=True)
+
+
+class Refiner(nn.Module):
+    def __init__(self, n_layers, dim, input_length):
+        super(Refiner, self).__init__()
+        self.layers = nn.ModuleList([])
+        for _ in range(n_layers):
+            self.layers.append(nn.Sequential(nn.Linear(input_length, input_length),
+                                             nn.Linear(input_length, input_length),
+                                             nn.Linear(input_length, input_length),
+                                             ))
+
+    def forward(self, input):
+        out = input.detach()
+        outs = []
+        for layer in self.layers:
+            # residual = layer(out)  # (b 1 l)
+            # residual = layer(out.detach())  # (b 1 l)
+            # out = out + residual
+            out = layer(out)  # (b 1 l)
+            outs.append(out)
+        return outs
+
+
+class InfoRemover(nn.Module):
+    def __init__(self, dim, removal_rate=0.99):
+        super().__init__()
+        self.removal_rate = removal_rate
+
+        self.conv = nn.Conv1d(in_channels=1, out_channels=dim, kernel_size=1, stride=1)
+        self.mask_token = nn.Parameter(torch.randn(dim,))
+
+    def forward(self, x):
+        out = self.conv(x)  # (b d l)
+        # mask_token = repeat(self.mask_token, 'd -> b d l', b=out.shape[0], l=out.shape[2])  # (b d l)
+
+        if self.training:
+            mask = torch.rand((out.shape[0], out.shape[2],)).to(x.device)  # (b l)
+            removal_rate = np.random.uniform(0.5, 0.99)
+            mask = mask > removal_rate  # 0 (False) for removing
+            mask = repeat(mask, 'b l -> b d l', d=out.shape[1])  # (b d l)
+            mask_token = repeat(self.mask_token, 'd -> b d l', b=out.shape[0], l=out.shape[2])  # (b d l)
+            out = mask * out + (~mask) * mask_token
+        return out
+
+
 class DomainShifter(nn.Module):
     def __init__(self, input_length, in_channels, n_fft, config):
         super(DomainShifter, self).__init__()
-        # self.n_fft = n_fft
+        self.n_fft = n_fft
         self.input_length = input_length
-        self.projector = Unet1D(channels=3*in_channels, **config['domain_shifter'], out_dim=1)
-        self.discretizer = Discretizer(**config['domain_shifter']['discretizer'], input_length=input_length)
 
-    def forward_projector(self, xhat, xhat_l, xhat_h):
-        xhat_comb = torch.cat((xhat, xhat_l, xhat_h), dim=1)  # (b 3c l)
-        xhat_comb = F.upsample(xhat_comb, size=self.input_length, mode='linear', align_corners=False)
-        xhat_c = self.projector(xhat_comb)
-        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
-        return xhat_c
+        # self.info_remover = InfoRemover(dim=4)
+        self.projector = Unet1D(channels=1, **config['domain_shifter'], out_dim=1)
+        # self.projector2 = Unet1D(channels=2*in_channels, **config['domain_shifter'], out_dim=1)
+        # self.discretizer = Discretizer(**config['domain_shifter']['discretizer'], input_length=input_length)
+        # self.refiner = Refiner(n_layers=1, dim=16, input_length=self.input_length)
 
-    def forward_vq(self, xhat_c, xhat, xhat_l, xhat_h):
-        out, vq_loss = self.discretizer(xhat_c, xhat, xhat_l, xhat_h)
-        return out, vq_loss
-        # return xhat_c, torch.tensor([0.], requires_grad=True)
+        # self.encoder_real = VQVAEEncoder(d=32, num_channels=1, downsample_rate=1, n_resnet_blocks=4)
+        # self.encoder_fake = VQVAEEncoder(d=32, num_channels=1, downsample_rate=1, n_resnet_blocks=4)
+        # self.decoder = VQVAEDecoder(d=32, num_channels=1, downsample_rate=4, n_resnet_blocks=4)
+        #self.encoder_real = Unet1D(channels=1, **config['domain_shifter'], out_dim=32)
+        #self.decoder = Unet1D(channels=32, **config['domain_shifter'], out_dim=1)
+        #self.vq = VectorQuantize(dim=32, codebook_size=128)
 
-    def forward(self, xhat, xhat_l, xhat_h, return_all=False):
+    def forward_projector(self, x_a, x_l_a, x_h_a):
+        #xhat_comb = torch.cat((xhat, xhat_l, xhat_h), dim=1)  # (b 3c l)
+        # xhat_comb = torch.cat((xhat_l, xhat_h), dim=1)  # (b 3c l)
+        # input = F.upsample(x_h_a, size=self.input_length, mode='linear', align_corners=True)
+        # xhat = self.projector(input)
+        # xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=True)
+        #
+        # xhat2 = self.projector2(torch.cat((xhat, x_l_a), dim=1))
+        # xhat2 = F.upsample(xhat2, size=self.input_length, mode='linear', align_corners=True)
+
+        # return xhat, xhat2
+        # xf_a = time_to_timefreq(x_a, self.n_fft, C=1)  # (b c h w)
+        # xf_a = rearrange(xf_a, 'b c h w -> b (c h) w')
+        # x_a = self.info_remover(x_a)
+        xhat = self.projector(x_a)
+        xhat = F.upsample(xhat, size=self.input_length, mode='linear')
+        return xhat
+
+    #def forward_encoder(self, x, kind):
+    #    if kind == 'real':
+    #        z = self.encoder_real(x)
+    #    elif kind == 'fake':
+    #        z = self.encoder_fake(x)
+    #    else:
+    #        raise ValueError
+
+        #z = F.normalize(z, p=2)
+
+        # register `upsample_size` in the decoders
+        # if not self.decoder.is_upsample_size_updated:
+        #     self.decoder.register_upsample_size(torch.tensor(x.shape[2]))
+
+    #    return z
+
+    #def forward_decoder(self, z):
+    #    # xhat_comb = torch.cat((xhat, xhat_l, xhat_h), dim=1)  # (b 3c l)
+    #    # xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
+    #    x = self.decoder(z)
+    #    x = F.upsample(x, size=self.input_length, mode='linear', align_corners=False)
+    #    return x
+
+    # def forward_refiner(self, xhat_p):
+    #     outs = self.refiner(xhat_p)
+    #     return outs
+
+    def forward(self, xhat):
         """
         :param xhat: (b 1 l)
         :return:
         """
-        xhat_c = self.forward_projector(xhat, xhat_l, xhat_h)
-        xhat_cd, _ = self.forward_vq(xhat_c, xhat, xhat_l, xhat_h)
-        if return_all:
-            return xhat_c, xhat_cd
-        else:
-            return xhat_cd
+        zhat = self.forward_encoder(xhat, 'real')
+        self.vq.eval()
+        zqhat, indices, vq_loss, perplexity = quantize(zhat, self.vq, transpose_channel_length_axes=True)
+        x_recons = self.forward_decoder(zqhat)
+        return x_recons
 
 
 if __name__ == '__main__':

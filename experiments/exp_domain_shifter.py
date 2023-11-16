@@ -54,8 +54,8 @@ class ExpDomainShifter(ExpBase):
         self.vq_model_h = self.maskgit.vq_model_h
 
         # stochastic codebook sampling
-        self.vq_model_l._codebook.sample_codebook_temp = config['MaskGIT']['stochastic_sampling']
-        self.vq_model_h._codebook.sample_codebook_temp = config['MaskGIT']['stochastic_sampling']
+        self.vq_model_l._codebook.sample_codebook_temp = config['domain_shifter']['stochastic_sampling']
+        self.vq_model_h._codebook.sample_codebook_temp = config['domain_shifter']['stochastic_sampling']
 
         self.s_count = None
 
@@ -65,23 +65,48 @@ class ExpDomainShifter(ExpBase):
         """
         pass
 
-    def domain_shifter_loss_fn(self, x, s_l_stoch, s_h_stoch):
+    def domain_shifter_loss_fn(self, x, s_a_l, s_a_h):
         # s -> z -> x
-        xhat_l_stoch = self.maskgit.decode_token_ind_to_timeseries(s_l_stoch, 'LF')  # (b 1 l)
-        xhat_h_stoch = self.maskgit.decode_token_ind_to_timeseries(s_h_stoch, 'HF')  # (b 1 l)
-        xhat = xhat_l_stoch + xhat_h_stoch  # (b c l)
+        x_l_a = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
+        x_h_a = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
+        x_a = x_l_a + x_h_a  # (b c l)
 
-        xhat_l_stoch = xhat_l_stoch.detach()
-        xhat_h_stoch = xhat_h_stoch.detach()
-        xhat = xhat.detach()
+        x_l_a = x_l_a.detach()
+        x_h_a = x_h_a.detach()
+        x_a = x_a.detach()
 
-        xhat_c = self.domain_shifter.forward_projector(xhat, xhat_l_stoch, xhat_h_stoch)
-        domain_shifter_loss = F.l1_loss(xhat_c, x)
+        xhat = self.domain_shifter.forward_projector(x_a, x_l_a, x_h_a)
+        # domain_shifter_proj_loss = F.l1_loss(xhat_p, x)
+        #
+        # xhat_prs = self.domain_shifter.forward_refiner(xhat_p)
+        # refine_loss = 0
+        # for i in range(len(xhat_prs)):
+        #     refine_loss += F.l1_loss(xhat_prs[i], x)
+        # refine_loss /= len(xhat_prs)
+        # domain_shifter_refiner_loss = refine_loss
 
-        xhat_cd, vq_loss = self.domain_shifter.forward_vq(xhat_c.detach(), xhat, xhat_l_stoch, xhat_h_stoch)
-        domain_shifter_loss += F.l1_loss(xhat_cd, x) + vq_loss.mean()
+        # similarity loss
+        #z = self.domain_shifter.forward_encoder(x, 'real')
+        # zhat = self.domain_shifter.forward_encoder(xhat, 'fake')
+        #zhat = self.domain_shifter.forward_encoder(xhat, 'real')
+        #sim_loss = torch.tensor(0., requires_grad=True)  #F.l1_loss(zhat, z)
+        # sim_loss = torch.tensor(0., requires_grad=True)
 
-        return domain_shifter_loss
+        # reconstruction loss
+        #zq, indices, vq_loss, perplexity = quantize(z, self.domain_shifter.vq, transpose_channel_length_axes=True)
+        #vq_loss = vq_loss['loss']
+        #x_recons = self.domain_shifter.forward_decoder(zq)
+
+        #self.domain_shifter.vq.eval()
+        #zhatq, _, _, _ = quantize(zhat, self.domain_shifter.vq, transpose_channel_length_axes=True)
+        #xhat_recons = self.domain_shifter.forward_decoder(zhatq)
+        #self.domain_shifter.vq.train()
+
+        #recons_loss = F.l1_loss(x_recons, x) + F.l1_loss(xhat_recons, x)
+        # recons_loss = F.l1_loss(xhat_recons, x)
+        recons_loss = F.l1_loss(xhat, x)
+
+        return recons_loss, (x_a, xhat)
 
     def create_masked_token_set(self, s_l, s_h, mask_ratio: float, device):
         n_masks_l = math.floor(mask_ratio * s_l.shape[1])
@@ -102,88 +127,77 @@ class ExpDomainShifter(ExpBase):
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+        x = x.float()
         device = x.device
 
         with torch.no_grad():
             # get `s`
-            _, s_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-            _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-            # `s_M` <- randomly-mask `s`
-            # mask_ratio = np.random.uniform(self.config['domain_shifter']['min_mask_ratio'], self.config['domain_shifter']['max_mask_ratio'])
-            mask_ratio = self.config['domain_shifter']['mask_ratio']  # constant masking_ratio leads to better performance in terms of FID and IS. varying masking_ratio makes the model training harder.
-            s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
-
-            # p_theta(s_a | s_M)
-            logits_l = self.maskgit.transformer_l(s_l_M)  # (b n codebook_size)
-            logits_h = self.maskgit.transformer_h(s_l, s_h_M)  # (b m codebook_size)
-            s_a_l = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
-            s_a_h = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
+            # # `s_M` <- randomly-mask `s`
+            # # mask_ratio = np.random.uniform(self.config['domain_shifter']['min_mask_ratio'], self.config['domain_shifter']['max_mask_ratio'])
+            # mask_ratio = self.config['domain_shifter']['mask_ratio']  # constant masking_ratio leads to better performance in terms of FID and IS. varying masking_ratio makes the model training harder.
+            # s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
+            #
+            # # p_theta(s_a | s_M)
+            # logits_l = self.maskgit.transformer_l(s_l_M)  # (b n codebook_size)
+            # logits_h = self.maskgit.transformer_h(s_l, s_h_M)  # (b m codebook_size)
+            # s_a_l = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
+            # s_a_h = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
 
         # domain shift loss
-        domain_shifter_loss = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
-
-        # clustering loss
-        # codebook_embed = self.domain_shifter.domain_shifter.vq_model_end._codebook.embed[None, :, :]  # (1 K d)
-        # dist_btn_codes = torch.cdist(codebook_embed, codebook_embed, p=2)  # (1 K K)
-        # dist_btn_codes = dist_btn_codes.mean()
-        # codebook_embed = self.domain_shifter.domain_shifter.vq_model_end._codebook.embed  # (K d)
-        # corr_btn_codes = torch.corrcoef(codebook_embed)
-        # corr_btn_codes_loss = (corr_btn_codes ** 2).mean()
-        # codebook_embed_val = self.domain_shifter.domain_shifter.vq_model_end._codebook.embed.abs().mean()
-
-        # # count use of tokens
-        # s_ind = s_ind.cpu().numpy().flatten()
-        # if batch_idx == 0:
-        #     self.s_count = Counter(s_ind)
-        # else:
-        #     self.s_count += Counter(s_ind)
-        # n_used_tokens = len(self.s_count)
-        # ratio_used_tokens_to_total_tokens = n_used_tokens / self.config['domain_shifter']['codebook_sizes']['end']
+        recons_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        domain_shifter_loss = recons_loss
 
         # lr scheduler
         sch = self.lr_schedulers()
         sch.step()
 
         # log
-        loss = domain_shifter_loss #+ codebook_embed_val
+        loss = domain_shifter_loss
         loss_hist = {'loss': loss,
                      'domain_shifter_loss': domain_shifter_loss,
-                     # 'codebook_embed_val': codebook_embed_val,
-                     # 'ratio_used_tokens_to_total_tokens:': ratio_used_tokens_to_total_tokens,
+                     #'sim_loss': sim_loss,
+                     'recons_loss': recons_loss,
+                     #'vq_loss': vq_loss
                      }
-
         detach_the_unnecessary(loss_hist)
         return loss_hist
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         x, y = batch
+        x = x.float()
         device = x.device
 
         with torch.no_grad():
             # get `s`
-            _, s_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-            _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-            # `s_M` <- randomly-mask `s`
-            # mask_ratio = np.random.uniform(0., self.config['domain_shifter']['max_mask_ratio'])
-            mask_ratio = self.config['domain_shifter']['mask_ratio']
-            s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
-
-            # p_theta(s_a | s_M)
-            logits_l = self.maskgit.transformer_l(s_l_M)  # (b n codebook_size)
-            logits_h = self.maskgit.transformer_h(s_l, s_h_M)  # (b m codebook_size)
-            s_a_l = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
-            s_a_h = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
+            # # `s_M` <- randomly-mask `s`
+            # # mask_ratio = np.random.uniform(0., self.config['domain_shifter']['max_mask_ratio'])
+            # mask_ratio = self.config['domain_shifter']['mask_ratio']
+            # s_l_M, s_h_M = self.create_masked_token_set(s_l, s_h, mask_ratio, device)
+            #
+            # # p_theta(s_a | s_M)
+            # logits_l = self.maskgit.transformer_l(s_l_M)  # (b n codebook_size)
+            # logits_h = self.maskgit.transformer_h(s_l, s_h_M)  # (b m codebook_size)
+            # s_a_l = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
+            # s_a_h = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
 
         # domain shift loss
-        domain_shifter_loss = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        recons_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        domain_shifter_loss = recons_loss
 
         # log
         loss = domain_shifter_loss
         loss_hist = {'loss': loss,
                      'domain_shifter_loss': domain_shifter_loss,
+                     #'sim_loss': sim_loss,
+                     'recons_loss': recons_loss,
+                     #'vq_loss': vq_loss
                      }
         detach_the_unnecessary(loss_hist)
 
@@ -192,32 +206,65 @@ class ExpDomainShifter(ExpBase):
             class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
 
             # unconditional sampling
-            s_l, s_h = self.maskgit.iterative_decoding(device=x.device, class_index=class_index)
+            s_l, s_h = self.maskgit.iterative_decoding(device=x.device, class_index=class_index, num=x.shape[0])
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
             # x_new_c, x_new_cd = self.domain_shifter(x_new.to(x.device), return_all=True)
-            x_new_c, x_new_cd = self.domain_shifter(x_new.to(x.device),
-                                                    x_new_l.to(x.device),
-                                                    x_new_h.to(x.device),
-                                                    return_all=True)
-            x_new_c = x_new_c.detach().cpu().numpy()
-            x_new_cd = x_new_cd.detach().cpu().numpy()
+            # x_new_p = self.domain_shifter(x_new.to(x.device))
+            # x_new_p = self.domain_shifter.forward_projector(x_new.to(x.device), x_new_l.to(x.device), x_new_h.to(x.device))
+            x_new_p = self.domain_shifter.forward_projector(x_new.to(x.device), x_new_l.to(x.device),x_new_h.to(x.device))
+            #z_gen = self.domain_shifter.forward_encoder(x_new_p, 'real')
+            x_new_p = x_new_p.detach().cpu().numpy()
+            # x_new_pr = x_new_pr.detach().cpu().numpy()
 
-            b = 0
-            fig, axes = plt.subplots(5, 1, figsize=(4, 2 * 5))
+            b = np.random.randint(0, x.shape[0])
+            n_subfigs = 8
+            fig, axes = plt.subplots(n_subfigs, 1, figsize=(4, 2 * n_subfigs))
             axes[0].plot(x_new_l[b, 0, :], label='x_l')
             axes[0].legend()
             axes[1].plot(x_new_h[b, 0, :], label='x_h')
             axes[1].legend()
             axes[2].plot(x_new[b, 0, :], label='x')
             axes[2].legend()
-            axes[3].plot(x_new_c[b, 0, :], label=r'$D_s$(x)')
+            axes[3].plot(x_new_p[b, 0, :], label=r'$P$(x)')
             axes[3].legend()
-            axes[4].plot(x_new_cd[b, 0, :], label=r'VQ($D_s$(x))')
-            axes[4].legend()
-            for ax in axes:
-                ax.set_ylim(-4, 4)
+
+            #axes[4].plot(x[b,0].cpu(), label=r'x')
+            #axes[4].plot(x_recons[b, 0].cpu(), label=r'x_recons')
+            #axes[4].legend()
+
+            axes[5].plot(x[b,0].cpu(), label=r'x', alpha=0.5)
+            axes[5].plot(x_a[b, 0].cpu(), label=r'x_a', alpha=0.5)
+            axes[5].legend()
+
+            # from sklearn.decomposition import PCA
+            # pca = PCA(n_components=2)
+            #z = rearrange(z, 'b c l -> b (c l)').cpu().numpy()
+            #zhat = rearrange(zhat, 'b c l -> b (c l)').cpu().numpy()
+            #z = pca.fit_transform(z)
+            #zhat = pca.transform(zhat)
+
+            #z_gen = rearrange(z_gen, 'b c l -> b (c l)').cpu().numpy()
+            #z_gen = pca.transform(z_gen)
+
+            #axes[6].scatter(z[:, 0], z[:, 1], label=r'z', alpha=0.5)
+            #axes[6].scatter(zhat[:,0], zhat[:,1], label=r'zhat', alpha=0.5)
+            #axes[6].scatter(z_gen[:,0], z_gen[:,1], label=r'z_gen', alpha=0.5)
+            #axes[6].legend()
+
+            axes[6].plot(x_a[b, 0].cpu(), label=r'x_a', alpha=0.7)
+            axes[6].plot(xhat[b, 0].cpu(), label=r'xhat', alpha=0.7)
+            axes[6].legend()
+
+            axes[7].plot(x[b, 0].cpu(), label=r'x', alpha=0.7)
+            axes[7].plot(xhat[b, 0].cpu(), label=r'xhat', alpha=0.7)
+            axes[7].legend()
+
+            # for i, ax in enumerate(axes):
+            #     if i != 6:
+            #         ax.set_ylim(-4, 4)
+
             plt.title(f'ep_{self.current_epoch}; class-{class_index}')
             plt.tight_layout()
             wandb.log({f"maskgit sample": wandb.Image(plt)})
