@@ -58,26 +58,26 @@ class ExpDomainShifter(ExpBase):
         """
         pass
 
-    def domain_shifter_loss_fn(self, x, s_l_stoch, s_h_stoch):
+    def domain_shifter_loss_fn(self, x, s_a_l, s_a_h):
         # s -> z -> x
-        xhat_l_stoch = self.maskgit.decode_token_ind_to_timeseries(s_l_stoch, 'LF')  # (b 1 l)
-        xhat_h_stoch = self.maskgit.decode_token_ind_to_timeseries(s_h_stoch, 'HF')  # (b 1 l)
-        xhat_stoch = xhat_l_stoch + xhat_h_stoch  # (b c l)
-        xhat_stoch = xhat_stoch.detach()
+        x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
+        x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
+        x_a = x_a_l + x_a_h  # (b c l)
+        x_a = x_a.detach()
 
-        xhat_stoch_c = self.domain_shifter(xhat_stoch)
-        recons_loss = F.l1_loss(xhat_stoch_c, x)
+        xhat = self.domain_shifter(x_a)
+        recons_loss = F.l1_loss(xhat, x)
 
         domain_shifter_loss = recons_loss
-        return domain_shifter_loss
+        return domain_shifter_loss, (x_a, xhat)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
 
-        _, s_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-        _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
+        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss = self.domain_shifter_loss_fn(x, s_l, s_h)
+        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
 
         # lr scheduler
         sch = self.lr_schedulers()
@@ -94,10 +94,10 @@ class ExpDomainShifter(ExpBase):
     def validation_step(self, batch, batch_idx):
         x, y = batch
 
-        _, s_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-        _, s_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
+        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss = self.domain_shifter_loss_fn(x, s_l, s_h)
+        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
 
         # log
         loss_hist = {'loss': domain_shifter_loss,
@@ -116,7 +116,8 @@ class ExpDomainShifter(ExpBase):
             x_new_corrected = self.domain_shifter(x_new.to(x.device)).detach().cpu().numpy()
 
             b = 0
-            fig, axes = plt.subplots(4, 1, figsize=(4, 2 * 4))
+            n_figs = 6
+            fig, axes = plt.subplots(n_figs, 1, figsize=(4, 2 * n_figs))
             axes[0].plot(x_new_l[b, 0, :], label='x_l')
             axes[0].legend()
             axes[1].plot(x_new_h[b, 0, :], label='x_h')
@@ -125,6 +126,19 @@ class ExpDomainShifter(ExpBase):
             axes[2].legend()
             axes[3].plot(x_new_corrected[b, 0, :], label=r'$D_s$(x)')
             axes[3].legend()
+
+            x = x.cpu().numpy()
+            x_a = x_a.cpu().numpy()
+            xhat = xhat.cpu().numpy()
+            b_ = np.random.randint(0, x.shape[0])
+            axes[4].plot(x[b_, 0, :], label='x')
+            axes[4].plot(xhat[b_, 0, :], label='xhat')
+            axes[4].legend()
+
+            axes[5].plot(x_a[b_, 0, :], label='x_a')
+            axes[5].plot(xhat[b_, 0, :], label='xhat')
+            axes[5].legend()
+
             for ax in axes:
                 ax.set_ylim(-4, 4)
             plt.title(f'ep_{self.current_epoch}; class-{class_index}')
