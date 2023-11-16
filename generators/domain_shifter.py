@@ -414,15 +414,15 @@ class DomainShifter(nn.Module):
         self.input_length = input_length
         self.domain_shifter = Unet1D(channels=in_channels, **config['domain_shifter'])
 
-    def forward(self, xhat):
+    def forward(self, x_a):
         """
         :param xhat: (b 1 l)
         :return:
         """
+        x_a = F.upsample(x_a, size=self.input_length, mode='linear', align_corners=False)
+        xhat = self.domain_shifter(x_a)  # (b 1 l)
         xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
-        xhat_c = self.domain_shifter(xhat)  # (b 1 l)
-        xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
-        return xhat_c
+        return xhat
 
 
 if __name__ == '__main__':
