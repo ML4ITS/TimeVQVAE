@@ -11,6 +11,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from einops import rearrange, reduce
+from utils import time_to_timefreq
 
 # constants
 
@@ -423,6 +424,56 @@ class DomainShifter(nn.Module):
         xhat = self.domain_shifter(x_a)  # (b 1 l)
         xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
         return xhat
+
+
+class Discriminator(nn.Module):
+    def __init__(self, n_fft):
+        super(Discriminator, self).__init__()
+        self.n_fft = n_fft
+
+        self.encoder = nn.Sequential(nn.Conv1d(10, 16, kernel_size=3, stride=1, padding=1),
+                                     nn.LeakyReLU(),
+                                     nn.Conv1d(16, 16, kernel_size=1),
+                                     nn.LeakyReLU(),
+                                     nn.Conv1d(16, 16, kernel_size=1),
+                                     nn.LeakyReLU(),
+                                     nn.Conv1d(16, 1, kernel_size=1),
+
+                                   # nn.Conv1d(16, 16, kernel_size=4, stride=2, padding=1),
+                                   # # nn.BatchNorm1d(8),
+                                   # nn.LeakyReLU(),
+                                   #
+                                   # nn.Conv1d(16, 16, kernel_size=4, stride=2, padding=1),
+                                   # # nn.BatchNorm1d(16),
+                                   # nn.LeakyReLU(),
+                                   #
+                                   # nn.Conv1d(16, 32, kernel_size=4, stride=2, padding=1),
+                                   # # nn.BatchNorm1d(32),
+                                   # nn.LeakyReLU(),
+                                   #
+                                   #   nn.Conv1d(32, 64, kernel_size=4, stride=2, padding=1),
+                                   #   # nn.BatchNorm1d(32),
+                                   #   nn.LeakyReLU(),
+                                   )
+        self.clf = nn.Sequential(nn.Linear(16, 16), nn.Tanh(), nn.Linear(16, 1))
+
+    # def get_representation(self, x):
+    #     x = time_to_timefreq(x, self.n_fft, C=1)  # (b c h w)
+    #     x = rearrange(x, 'b c h w -> b (c h) w')
+    #
+    #     z = self.encoder(x)
+    #     z = torch.mean(z, dim=-1)  # (b d)
+    #     return z
+
+    def forward(self, x):
+        x = time_to_timefreq(x, self.n_fft, C=1)  # (b c h w)
+        x = rearrange(x, 'b c h w -> b (c h) w')
+        out = self.encoder(x)  # (b 1 l)
+        return out
+        # z = self.encoder(x)
+        # z = torch.mean(z, dim=-1)  # (b d)
+        # out = self.clf(z)  # (b 1)
+        # return out
 
 
 if __name__ == '__main__':
