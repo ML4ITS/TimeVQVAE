@@ -70,4 +70,4 @@ domain_shifter:
     - 4
     - 8
   resnet_block_groups: 4
-  attention_ups_downs: False
+  attention_ups_downs: True
