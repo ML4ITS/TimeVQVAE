@@ -16,7 +16,7 @@ from preprocessing.preprocess_ucr import DatasetImporterUCR
 
 from experiments.exp_domain_shifter import ExpDomainShifter
 from evaluation.evaluation import Evaluation
-from utils import get_root_dir, load_yaml_param_settings, save_model
+from utils import get_root_dir, load_yaml_param_settings, save_model, get_target_ucr_dataset_names
 
 
 def load_args():
@@ -97,10 +97,13 @@ if __name__ == '__main__':
     config = load_yaml_param_settings(args.config)
 
     # config
-    dataset_names = args.dataset_names
+    dataset_names = get_target_ucr_dataset_names(args)
+    print('dataset_names:', dataset_names)
 
     # run
     for dataset_name in dataset_names:
+        print('dataset_name:', dataset_name)
+
         # data pipeline
         dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
         batch_size = config['dataset']['batch_sizes']['stage3']

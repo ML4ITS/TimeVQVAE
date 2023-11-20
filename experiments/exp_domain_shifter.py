@@ -13,7 +13,7 @@ from einops import rearrange
 
 from generators.maskgit import MaskGIT
 from experiments.exp_base import ExpBase, detach_the_unnecessary
-from generators.domain_shifter import DomainShifter, RandConv
+from generators.domain_shifter import DomainShifter
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from vector_quantization.vq import VectorQuantize
 from utils import get_root_dir, freeze, compute_downsample_rate, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
