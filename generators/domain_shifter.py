@@ -337,9 +337,9 @@ class Unet1D(nn.Module):
 
         self.final_res_block = block_klass(dim * 2, dim, time_emb_dim = time_dim)
         # self.final_conv = nn.Conv1d(dim, self.out_dim, 1)
-        self.final_conv = nn.Sequential(nn.Conv1d(dim, self.out_dim, 1),
-                                        nn.Conv1d(self.out_dim, self.out_dim, kernel_size=3, padding=1),
-                                        nn.Conv1d(self.out_dim, self.out_dim, kernel_size=3, padding=1),
+        self.final_conv = nn.Sequential(nn.Conv1d(dim, self.out_dim, kernel_size=1),
+                                        nn.Conv1d(self.out_dim, self.out_dim, kernel_size=3, padding=1, padding_mode='replicate'),
+                                        nn.Conv1d(self.out_dim, self.out_dim, kernel_size=3, padding=1, padding_mode='replicate'),
                                         )
 
     def forward(self, x):
