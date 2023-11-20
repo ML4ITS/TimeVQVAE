@@ -71,3 +71,8 @@ domain_shifter:
     - 8
   resnet_block_groups: 4
   attention_ups_downs: True
+
+evaluation:
+  batch_size: 256
+  min_num_gen_samples: 1024
+  use_domain_shifter: True
