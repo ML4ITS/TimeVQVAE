@@ -6,6 +6,7 @@ import math
 from functools import partial
 from collections import namedtuple
 
+import numpy as np
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
@@ -423,6 +424,29 @@ class DomainShifter(nn.Module):
         xhat = self.domain_shifter(x_a)  # (b 1 l)
         xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
         return xhat
+
+
+class RandConv(nn.Module):
+    def __init__(self, n_convs, input_length):
+        super().__init__()
+        self.convs = nn.ModuleList([])
+        for _ in range(n_convs):
+            kernel_size = np.random.choice([7, 9, 11])
+            A = np.log2((input_length - 1) / (kernel_size - 1))
+            mult = np.random.uniform(0, A)
+            dilation = int(np.floor(2**mult))
+            conv = nn.Conv1d(in_channels=1, out_channels=8, kernel_size=kernel_size, dilation=dilation)
+            weight = torch.randn(conv.weight.shape)
+            conv.weight = nn.Parameter(weight - torch.mean(weight))
+            self.convs.append(conv)
+
+    def forward(self, input):
+        zs = []
+        for conv in self.convs:
+            z = conv(input)
+            zs.append(z)
+        return zs
+
 
 
 if __name__ == '__main__':

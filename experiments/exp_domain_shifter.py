@@ -13,7 +13,7 @@ from einops import rearrange
 
 from generators.maskgit import MaskGIT
 from experiments.exp_base import ExpBase, detach_the_unnecessary
-from generators.domain_shifter import DomainShifter
+from generators.domain_shifter import DomainShifter, RandConv
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from vector_quantization.vq import VectorQuantize
 from utils import get_root_dir, freeze, compute_downsample_rate, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
@@ -34,6 +34,7 @@ class ExpDomainShifter(ExpBase):
 
         # domain shifter
         self.domain_shifter = DomainShifter(input_length, 1, self.n_fft, config)
+        self.rand_conv = RandConv(128, input_length)
 
         # load maskgit
         self.maskgit = MaskGIT(dataset_name, input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
@@ -68,16 +69,25 @@ class ExpDomainShifter(ExpBase):
         xhat = self.domain_shifter(x_a)
         recons_loss = F.l1_loss(xhat, x)
 
-        domain_shifter_loss = recons_loss
-        return domain_shifter_loss, (x_a, xhat)
+        zhat = self.rand_conv(xhat)
+        z = self.rand_conv(x)
+        percept_loss = 0.
+        for i in range(len(z)):
+            percept_loss += F.l1_loss(z[i], zhat[i])
+        percept_loss /= (i+1)
+
+        domain_shifter_loss = recons_loss + 10*percept_loss
+        # domain_shifter_loss = percept_loss
+        return domain_shifter_loss, recons_loss, percept_loss, (x_a, xhat)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
+        x = x.float()
 
         _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        domain_shifter_loss, recons_loss, percept_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
 
         # lr scheduler
         sch = self.lr_schedulers()
@@ -85,6 +95,8 @@ class ExpDomainShifter(ExpBase):
 
         # log
         loss_hist = {'loss': domain_shifter_loss,
+                     'recons_loss': recons_loss,
+                     'percept_loss': percept_loss,
                      }
 
         detach_the_unnecessary(loss_hist)
@@ -93,14 +105,17 @@ class ExpDomainShifter(ExpBase):
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         x, y = batch
+        x = x.float()
 
         _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        domain_shifter_loss, recons_loss, percept_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
 
         # log
         loss_hist = {'loss': domain_shifter_loss,
+                     'recons_loss': recons_loss,
+                     'percept_loss': percept_loss,
                      }
         detach_the_unnecessary(loss_hist)
 
