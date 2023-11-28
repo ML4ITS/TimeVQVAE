@@ -210,7 +210,10 @@ class EuclideanCodebook(nn.Module):
                 + embed.pow(2).sum(0, keepdim=True)
         )
         # embed_ind = gumbel_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
-        embed_ind = softmax_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
+        if self.training:
+            embed_ind = softmax_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
+        else:
+            embed_ind = softmax_sample(dist, dim=-1, temperature=0.)  # no stochasticity
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
         quantize = F.embedding(embed_ind, self.embed)
