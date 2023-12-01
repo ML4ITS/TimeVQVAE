@@ -60,8 +60,12 @@ class ExpDomainShifter(ExpBase):
 
     def domain_shifter_loss_fn(self, x, s_a_l, s_a_h):
         # s -> z -> x
+        self.vq_model_l.train()
+        self.vq_model_h.train()
         x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
         x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
+        self.vq_model_l.eval()
+        self.vq_model_h.eval()
         x_a = x_a_l + x_a_h  # (b c l)
         x_a = x_a.detach()
 
