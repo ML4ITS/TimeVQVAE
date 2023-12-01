@@ -38,7 +38,7 @@ class Evaluation(object):
         self.subset_dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
         self.config = config
-        self.batch_size = self.config['evaluation']['min_num_gen_samples']
+        self.batch_size = self.config['evaluation']['batch_size']
 
         # load the pretrained FCN
         self.fcn = load_pretrained_FCN(subset_dataset_name).to(self.device)

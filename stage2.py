@@ -71,7 +71,7 @@ def train_stage2(config: dict,
     # test
     print('evaluating...')
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
-    min_num_gen_samples = 1024  # large enough to capture the distribution
+    min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_test = evaluation.compute_z_test()
     z_gen = evaluation.compute_z_gen(x_gen)

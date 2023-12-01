@@ -69,7 +69,7 @@ def train_stage3(config: dict,
     # test
     print('evaluating...')
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
-    min_num_gen_samples = 1024  # large enough to capture the distribution
+    min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_test = evaluation.compute_z_test()
     z_gen = evaluation.compute_z_gen(x_gen)
@@ -98,7 +98,8 @@ if __name__ == '__main__':
 
     # config
     dataset_names = get_target_ucr_dataset_names(args)
-    print('dataset_names:', dataset_names)
+    print(' '.join(dataset_names))
+    # print('dataset_names:', dataset_names)
 
     # run
     for dataset_name in dataset_names:
@@ -111,3 +112,4 @@ if __name__ == '__main__':
 
         # train
         train_stage3(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)
+        torch.cuda.empty_cache()

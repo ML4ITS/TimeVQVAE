@@ -4,7 +4,7 @@ dataset:
   batch_sizes:
     stage1: 128
     stage2: 256
-    stage3: 256
+    stage3: 128
   num_workers: 0
 
 exp_params:
@@ -15,7 +15,7 @@ trainer_params:
   max_epochs:
     stage1: 2000
     stage2: 10000
-    stage3: 2000
+    stage3: 1000
 
 encoder:
   dim: 64
@@ -73,6 +73,6 @@ domain_shifter:
   attention_ups_downs: True
 
 evaluation:
-  batch_size: 256
+  batch_size: 128
   min_num_gen_samples: 1024
   use_domain_shifter: True
