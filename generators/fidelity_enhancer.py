@@ -261,7 +261,6 @@ class Unet1D(nn.Module):
         learned_sinusoidal_cond = False,
         random_fourier_features = False,
         learned_sinusoidal_dim = 16,
-        attention_ups_downs=False,
         **kwargs,
     ):
         super().__init__()
@@ -312,7 +311,7 @@ class Unet1D(nn.Module):
             self.downs.append(nn.ModuleList([
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
                 block_klass(dim_in, dim_in, time_emb_dim = time_dim),
-                Residual(PreNorm(dim_in, LinearAttention(dim_in))) if attention_ups_downs else nn.Identity(),
+                Residual(PreNorm(dim_in, LinearAttention(dim_in))),
                 Downsample(dim_in, dim_out) if not is_last else nn.Conv1d(dim_in, dim_out, 3, padding = 1)
             ]))
 
@@ -327,7 +326,7 @@ class Unet1D(nn.Module):
             self.ups.append(nn.ModuleList([
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
                 block_klass(dim_out + dim_in, dim_out, time_emb_dim = time_dim),
-                Residual(PreNorm(dim_out, LinearAttention(dim_out))) if attention_ups_downs else nn.Identity(),
+                Residual(PreNorm(dim_out, LinearAttention(dim_out))),
                 Upsample(dim_out, dim_in) if not is_last else  nn.Conv1d(dim_out, dim_in, 3, padding = 1)
             ]))
         self.last_up = Upsample(dim_in, dim_in)
@@ -388,45 +387,21 @@ class Unet1D(nn.Module):
         return self.final_conv(x)
 
 
-# class DomainShifter(nn.Module):
-#     def __init__(self, input_length, in_channels, n_fft, config):
-#         super(DomainShifter, self).__init__()
-#         self.n_fft = n_fft
-#         self.input_length = input_length
-#         self.domain_shifter = Unet1D(channels=in_channels, **config['domain_shifter'])
-#
-#     def forward(self, xhat):
-#         """
-#         :param xhat: (b c n)
-#         :return:
-#         """
-#         xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
-#         xfhat = torch.stft(xhat[:, 0, :], n_fft=self.n_fft, return_complex=False, normalized=True)  # (b h w 2)
-#         xfhat = rearrange(xfhat, 'b h w c -> b (h c) w')  # (b h2 w)
-#
-#         xfhat_c = self.domain_shifter(xfhat)
-#         xfhat_c = rearrange(xfhat_c, 'b (h c) w -> b h w c', c=2)  # (b h w 2)
-#
-#         xhat_c = torch.istft(xfhat_c, n_fft=self.n_fft, normalized=True)  # (b l)
-#         xhat_c = xhat_c[:, None, :]  # (b 1 l); adding a channel dim
-#         xhat_c = F.upsample(xhat_c, size=self.input_length, mode='linear', align_corners=False)
-#         return xhat_c
-
-class DomainShifter(nn.Module):
-    def __init__(self, input_length, in_channels, n_fft, config):
-        super(DomainShifter, self).__init__()
-        self.n_fft = n_fft
+class FidelityEnhancer(nn.Module):
+    def __init__(self, input_length, in_channels, config):
+        super().__init__()
         self.input_length = input_length
-        self.domain_shifter = Unet1D(channels=in_channels, **config['domain_shifter'])
+        self.unet = Unet1D(channels=in_channels, **config['fidelity_enhancer'])
 
     def forward(self, x_a):
         """
         :param xhat: (b 1 l)
+        :param super_resolution_rate: which factor is x lengthened by? (1 equals no use)
         :return:
         """
         x_a = F.upsample(x_a, size=self.input_length, mode='linear', align_corners=False)
-        xhat = self.domain_shifter(x_a)  # (b 1 l)
-        xhat = F.upsample(xhat, size=self.input_length, mode='linear', align_corners=False)
+        xhat = self.unet(x_a)  # (b 1 l)
+
         return xhat
 
 

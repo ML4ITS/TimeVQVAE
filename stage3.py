@@ -1,5 +1,5 @@
 """
-train a domain shifter
+train TS-FidelityEnhancer
 """
 import copy
 from argparse import ArgumentParser
@@ -14,7 +14,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 
-from experiments.exp_domain_shifter import ExpDomainShifter
+from experiments.exp_fidelity_enhancer import ExpFidelityEnhancer
 from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model, get_target_ucr_dataset_names
 
@@ -43,7 +43,7 @@ def train_stage3(config: dict,
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpDomainShifter(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
+    train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
     wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
@@ -64,29 +64,35 @@ def train_stage3(config: dict,
     wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
-    save_model({'domain_shifter': train_exp.domain_shifter}, id=dataset_name)
+    save_model({'fidelity_enhancer': train_exp.fidelity_enhancer}, id=dataset_name)
 
     # test
     print('evaluating...')
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
-    z_test = evaluation.compute_z_test()
+    z_train = evaluation.compute_z('train')
+    z_test = evaluation.compute_z('test')
     z_gen = evaluation.compute_z_gen(x_gen)
-    fid = evaluation.fid_score(z_test, z_gen)
+
+    # fid_train = evaluation.fid_score(z_test, z_gen)
     IS_mean, IS_std = evaluation.inception_score(x_gen)
-    wandb.log({'FID': fid, 'IS_mean': IS_mean, 'IS_std': IS_std})
+    wandb.log({'FID_train_gen': evaluation.fid_score(z_train, z_gen),
+               'FID_test_gen': evaluation.fid_score(z_test, z_gen),
+               'FID_train_test': evaluation.fid_score(z_train, z_test),
+               'IS_mean': IS_mean,
+               'IS_std': IS_std})
 
-    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
-    evaluation.log_pca(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
-    evaluation.log_tsne(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+    # evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, x_gen,
+                                     'X_train vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, evaluation.X_test,
+                                     'X_train vs X_test')
 
-    # compute inherent difference between Z_train and Z_test
-    z_train = evaluation.compute_z_train_test('train')
-    fid_inherent_error = evaluation.fid_score(z_train, z_test)
-    wandb.log({'FID-inherent_error': fid_inherent_error})
-    evaluation.log_visual_inspection_train_test(min(200, evaluation.X_test.shape[0]))
-    evaluation.log_pca_ztrain_ztest(min(1000, evaluation.X_test.shape[0]), z_train, z_test)
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
+    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
 
     wandb.finish()
 

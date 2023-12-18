@@ -15,7 +15,7 @@ trainer_params:
   max_epochs:
     stage1: 2000
     stage2: 10000
-    stage3: 1000
+    stage3: 2000
 
 encoder:
   dim: 64
@@ -61,7 +61,7 @@ MaskGIT:
 class_guidance:
   guidance_scale: 1.
 
-domain_shifter:
+fidelity_enhancer:
   stochastic_sampling: 1
   dim: 8
   dim_mults:
@@ -70,9 +70,8 @@ domain_shifter:
     - 4
     - 8
   resnet_block_groups: 4
-  attention_ups_downs: True
 
 evaluation:
   batch_size: 128
   min_num_gen_samples: 1024
-  use_domain_shifter: True
+  use_fidelity_enhancer: True

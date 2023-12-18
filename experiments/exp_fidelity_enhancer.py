@@ -13,13 +13,13 @@ from einops import rearrange
 
 from generators.maskgit import MaskGIT
 from experiments.exp_base import ExpBase, detach_the_unnecessary
-from generators.domain_shifter import DomainShifter
+from generators.fidelity_enhancer import FidelityEnhancer
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from vector_quantization.vq import VectorQuantize
 from utils import get_root_dir, freeze, compute_downsample_rate, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
 
 
-class ExpDomainShifter(ExpBase):
+class ExpFidelityEnhancer(ExpBase):
     def __init__(self,
                  dataset_name: str,
                  input_length: int,
@@ -33,7 +33,7 @@ class ExpDomainShifter(ExpBase):
         self.n_fft = config['VQ-VAE']['n_fft']
 
         # domain shifter
-        self.domain_shifter = DomainShifter(input_length, 1, self.n_fft, config)
+        self.fidelity_enhancer = FidelityEnhancer(input_length, 1, config)
 
         # load maskgit
         self.maskgit = MaskGIT(dataset_name, input_length, **self.config['MaskGIT'], config=self.config, n_classes=n_classes).to(self.device)
@@ -49,8 +49,8 @@ class ExpDomainShifter(ExpBase):
         self.vq_model_h = self.maskgit.vq_model_h
 
         # stochastic codebook sampling
-        self.vq_model_l._codebook.sample_codebook_temp = config['domain_shifter']['stochastic_sampling']
-        self.vq_model_h._codebook.sample_codebook_temp = config['domain_shifter']['stochastic_sampling']
+        self.vq_model_l._codebook.sample_codebook_temp = config['fidelity_enhancer']['stochastic_sampling']
+        self.vq_model_h._codebook.sample_codebook_temp = config['fidelity_enhancer']['stochastic_sampling']
 
     def forward(self, x):
         """
@@ -58,7 +58,7 @@ class ExpDomainShifter(ExpBase):
         """
         pass
 
-    def domain_shifter_loss_fn(self, x, s_a_l, s_a_h):
+    def fidelity_enhancer_loss_fn(self, x, s_a_l, s_a_h):
         # s -> z -> x
         self.vq_model_l.train()
         self.vq_model_h.train()
@@ -69,11 +69,11 @@ class ExpDomainShifter(ExpBase):
         x_a = x_a_l + x_a_h  # (b c l)
         x_a = x_a.detach()
 
-        xhat = self.domain_shifter(x_a)
+        xhat = self.fidelity_enhancer(x_a)
         recons_loss = F.l1_loss(xhat, x)
 
-        domain_shifter_loss = recons_loss
-        return domain_shifter_loss, (x_a, xhat)
+        fidelity_enhancer_loss = recons_loss
+        return fidelity_enhancer_loss, (x_a, xhat)
 
     def training_step(self, batch, batch_idx):
         x, y = batch
@@ -82,14 +82,14 @@ class ExpDomainShifter(ExpBase):
         _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        fidelity_enhancer_loss, (x_a, xhat) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
 
         # lr scheduler
         sch = self.lr_schedulers()
         sch.step()
 
         # log
-        loss_hist = {'loss': domain_shifter_loss,
+        loss_hist = {'loss': fidelity_enhancer_loss,
                      }
 
         detach_the_unnecessary(loss_hist)
@@ -103,10 +103,10 @@ class ExpDomainShifter(ExpBase):
         _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        domain_shifter_loss, (x_a, xhat) = self.domain_shifter_loss_fn(x, s_a_l, s_a_h)
+        fidelity_enhancer_loss, (x_a, xhat) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
 
         # log
-        loss_hist = {'loss': domain_shifter_loss,
+        loss_hist = {'loss': fidelity_enhancer_loss,
                      }
         detach_the_unnecessary(loss_hist)
 
@@ -119,7 +119,7 @@ class ExpDomainShifter(ExpBase):
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
-            x_new_corrected = self.domain_shifter(x_new.to(x.device)).detach().cpu().numpy()
+            x_new_corrected = self.fidelity_enhancer(x_new.to(x.device)).detach().cpu().numpy()
 
             b = 0
             n_figs = 6
@@ -155,7 +155,7 @@ class ExpDomainShifter(ExpBase):
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW([{'params': self.domain_shifter.parameters(), 'lr': self.config['exp_params']['LR']},
+        opt = torch.optim.AdamW([{'params': self.fidelity_enhancer.parameters(), 'lr': self.config['exp_params']['LR']},
                                  ],
                                 weight_decay=self.config['exp_params']['weight_decay'])
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, self.T_max)}

@@ -23,7 +23,7 @@ from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN.example_compute_FID import calculate_fid
 from supervised_FCN.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
-from generators.domain_shifter import DomainShifter
+from generators.fidelity_enhancer import FidelityEnhancer
 
 
 class Evaluation(object):
@@ -64,13 +64,13 @@ class Evaluation(object):
         self.maskgit.eval()
 
         # load domain shifter
-        if self.config['evaluation']['use_domain_shifter']:
-            self.domain_shifter = DomainShifter(self.ts_len, 1, config['VQ-VAE']['n_fft'], config)
-            fname = f'domain_shifter-{dataset_name}.ckpt'
+        if self.config['evaluation']['use_fidelity_enhancer']:
+            self.fidelity_enhancer = FidelityEnhancer(self.ts_len, 1, config)
+            fname = f'fidelity_enhancer-{dataset_name}.ckpt'
             ckpt_fname = os.path.join('saved_models', fname)
-            self.domain_shifter.load_state_dict(torch.load(ckpt_fname))
+            self.fidelity_enhancer.load_state_dict(torch.load(ckpt_fname))
         else:
-            self.domain_shifter = nn.Identity()
+            self.fidelity_enhancer = nn.Identity()
 
     def sample(self, n_samples: int, kind: str, class_index: int = -1):
         assert kind in ['unconditional', 'conditional']
@@ -85,7 +85,7 @@ class Evaluation(object):
 
         # domain shifter
         with torch.no_grad():
-            x_new = self.domain_shifter(x_new)
+            x_new = self.fidelity_enhancer(x_new)
 
         return x_new_l, x_new_h, x_new
 
@@ -110,13 +110,21 @@ class Evaluation(object):
         zs = np.concatenate(zs, axis=0)
         return zs
 
-    def compute_z_test(self) -> (np.ndarray, np.ndarray):
+    def compute_z(self, kind: str) -> (np.ndarray, np.ndarray):
         """
         It computes representation z given input x
         :param X_gen: generated X
         :return: z_test (z on X_test), z_gen (z on X_generated)
         """
-        n_samples = self.X_test.shape[0]
+        assert kind in ['train', 'test']
+        if kind == 'train':
+            X = self.X_train
+        elif kind == 'test':
+            X = self.X_test
+        else:
+            raise ValueError
+
+        n_samples = X.shape[0]
         n_iters = n_samples // self.batch_size
         if n_samples % self.batch_size > 0:
             n_iters += 1
@@ -125,7 +133,7 @@ class Evaluation(object):
         z_test = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            z_t = self.fcn(torch.from_numpy(self.X_test[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            z_t = self.fcn(torch.from_numpy(X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
             z_test.append(z_t)
         z_test = np.concatenate(z_test, axis=0)
         return z_test
@@ -178,60 +186,64 @@ class Evaluation(object):
         IS_mean, IS_std = calculate_inception_score(p_yx_gen)
         return IS_mean, IS_std
 
-    def log_visual_inspection(self, n_plot_samples: int, X_gen, ylim: tuple = (-5, 5)):
+    def log_visual_inspection(self, n_plot_samples: int, X1, X2, title: str, ylim: tuple = (-5, 5)):
         # `X_test`
-        sample_ind = np.random.randint(0, self.X_test.shape[0], n_plot_samples)
+        sample_ind = np.random.randint(0, X1.shape[0], n_plot_samples)
         fig, axes = plt.subplots(2, 1, figsize=(4, 4))
+        plt.suptitle(title)
         for i in sample_ind:
-            axes[0].plot(self.X_test[i, 0, :], alpha=0.1)
+            axes[0].plot(X1[i, 0, :], alpha=0.1)
         axes[0].set_xticks([])
         axes[0].set_ylim(*ylim)
-        axes[0].set_title('test samples')
+        # axes[0].set_title('test samples')
 
         # `X_gen`
-        sample_ind = np.random.randint(0, X_gen.shape[0], n_plot_samples)
+        sample_ind = np.random.randint(0, X2.shape[0], n_plot_samples)
         for i in sample_ind:
-            axes[1].plot(X_gen[i, 0, :], alpha=0.1)
+            axes[1].plot(X2[i, 0, :], alpha=0.1)
         axes[1].set_ylim(*ylim)
-        axes[1].set_title('generated samples')
+        # axes[1].set_title('generated samples')
 
         plt.tight_layout()
-        wandb.log({"visual inspection": wandb.Image(plt)})
+        wandb.log({f"visual comp ({title})": wandb.Image(plt)})
         plt.close()
 
-    def log_pca(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
-        X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
-        X_gen = X_gen.cpu().numpy()
+    # def log_pca(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
+    def log_pca(self, n_plot_samples: int, Z1: np.ndarray, Z2: np.ndarray, labels):
 
-        sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
-        sample_ind_gen = np.random.choice(range(X_gen.shape[0]), size=n_plot_samples, replace=True)
+        # X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
+        # X_gen = X_gen.cpu().numpy()
 
-        # PCA: data space
-        pca = PCA(n_components=2)
-        X_embedded_test = pca.fit_transform(self.X_test.squeeze()[sample_ind_test])
-        X_embedded_gen = pca.transform(X_gen.squeeze()[sample_ind_gen])
+        # sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
+        ind1 = np.random.choice(range(Z1.shape[0]), size=n_plot_samples, replace=True)
+        ind2 = np.random.choice(range(Z2.shape[0]), size=n_plot_samples, replace=True)
 
-        plt.figure(figsize=(4, 4))
-        # plt.title("PCA in the data space")
-        plt.scatter(X_embedded_test[:, 0], X_embedded_test[:, 1], alpha=0.1, label='test')
-        plt.scatter(X_embedded_gen[:, 0], X_embedded_gen[:, 1], alpha=0.1, label='gen')
-        plt.legend()
-        plt.tight_layout()
-        wandb.log({"PCA-data_space": wandb.Image(plt)})
-        plt.close()
+        # # PCA: data space
+        # pca = PCA(n_components=2)
+        # X_embedded_test = pca.fit_transform(self.X_test.squeeze()[sample_ind_test])
+        # X_embedded_gen = pca.transform(X_gen.squeeze()[sample_ind_gen])
+        #
+        # plt.figure(figsize=(4, 4))
+        # # plt.title("PCA in the data space")
+        # plt.scatter(X_embedded_test[:, 0], X_embedded_test[:, 1], alpha=0.1, label='test')
+        # plt.scatter(X_embedded_gen[:, 0], X_embedded_gen[:, 1], alpha=0.1, label='gen')
+        # plt.legend()
+        # plt.tight_layout()
+        # wandb.log({"PCA-data_space": wandb.Image(plt)})
+        # plt.close()
 
         # PCA: latent space
         pca = PCA(n_components=2)
-        z_embedded_test = pca.fit_transform(z_test.squeeze()[sample_ind_test].squeeze())
-        z_embedded_gen = pca.transform(z_gen[sample_ind_gen].squeeze())
+        Z1_embed = pca.fit_transform(Z1[ind1])
+        Z2_embed = pca.transform(Z2[ind2])
 
         plt.figure(figsize=(4, 4))
         # plt.title("PCA in the representation space by the trained encoder");
-        plt.scatter(z_embedded_test[:, 0], z_embedded_test[:, 1], alpha=0.1, label='test')
-        plt.scatter(z_embedded_gen[:, 0], z_embedded_gen[:, 1], alpha=0.1, label='gen')
+        plt.scatter(Z1_embed[:, 0], Z1_embed[:, 1], alpha=0.1, label=labels[0])
+        plt.scatter(Z2_embed[:, 0], Z2_embed[:, 1], alpha=0.1, label=labels[1])
         plt.legend()
         plt.tight_layout()
-        wandb.log({"PCA-latent_space": wandb.Image(plt)})
+        wandb.log({f"PCA on Z ({labels[0]} vs  {labels[1]})": wandb.Image(plt)})
         plt.close()
 
     def log_visual_inspection_train_test(self, n_plot_samples: int, ylim: tuple = (-5, 5)):

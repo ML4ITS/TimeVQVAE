@@ -73,22 +73,28 @@ def train_stage2(config: dict,
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
-    z_test = evaluation.compute_z_test()
+    z_train = evaluation.compute_z('train')
+    z_test = evaluation.compute_z('test')
     z_gen = evaluation.compute_z_gen(x_gen)
-    fid = evaluation.fid_score(z_test, z_gen)
+
+    # fid_train = evaluation.fid_score(z_test, z_gen)
     IS_mean, IS_std = evaluation.inception_score(x_gen)
-    wandb.log({'FID': fid, 'IS_mean': IS_mean, 'IS_std': IS_std})
+    wandb.log({'FID_train_gen': evaluation.fid_score(z_train, z_gen),
+               'FID_test_gen': evaluation.fid_score(z_test, z_gen),
+               'FID_train_test': evaluation.fid_score(z_train, z_test),
+               'IS_mean': IS_mean,
+               'IS_std': IS_std})
 
-    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
-    evaluation.log_pca(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
-    evaluation.log_tsne(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+    # evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, x_gen,
+                                     'X_train vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, evaluation.X_test,
+                                     'X_train vs X_test')
 
-    # compute inherent difference between Z_train and Z_test
-    z_train = evaluation.compute_z_train_test('train')
-    fid_inherent_error = evaluation.fid_score(z_train, z_test)
-    wandb.log({'FID-inherent_error': fid_inherent_error})
-    evaluation.log_visual_inspection_train_test(min(200, evaluation.X_test.shape[0]))
-    evaluation.log_pca_ztrain_ztest(min(1000, evaluation.X_test.shape[0]), z_train, z_test)
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
+    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
 
     wandb.finish()
 
