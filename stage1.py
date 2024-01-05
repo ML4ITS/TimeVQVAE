@@ -51,7 +51,7 @@ def train_stage1(config: dict,
                          max_epochs=config['trainer_params']['max_epochs']['stage1'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage1'] / 10),
+                         check_val_every_n_epoch=int(np.ceil(config['trainer_params']['max_epochs']['stage1'] / 100)),
                          )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
