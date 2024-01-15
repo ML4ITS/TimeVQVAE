@@ -123,6 +123,15 @@ python stage3.py  --dataset_names CBF BME --gpu_device_idx 0
 then you can generate new time series by running `python evaluate.py` with `evaluation/use_fidelity_enhancer = True` in `configs/config.yaml`.
 
 
+### TimeVQVAE Anomaly Detection, TimeVQVAE-AD [4]
+TimeVQVAE learns a prior, and we can utilize the learned prior to measure the likelihood of a segment of time series,
+in which a high likelihood indicates a normal state while a low likelihood indicates an abnormal state (_i.e.,_ anomaly). 
+With that principal, we have developed TimeVQVAE-AD. 
+It not only achieves a state-of-the-art anomaly detection accuracy on [the UCR Anomaly archive](https://paperswithcode.com/dataset/ucr-anomaly-archive),
+but also provides a high level of explainability, covering counterfactual sampling (_i.e.,_ to answer the following question, "how is the time series supposed look if there was no anomaly?").
+
+
+
 ## Citation
 ```
 [1]
@@ -145,4 +154,11 @@ then you can generate new time series by running `python evaluate.py` with `eval
 
 [3]
 
+[4] 
+@article{lee2023explainable,
+  title={Explainable Anomaly Detection using Masked Latent Generative Modeling},
+  author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
+  journal={arXiv preprint arXiv:2311.12550},
+  year={2023}
+}
 ```
