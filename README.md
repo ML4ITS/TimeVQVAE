@@ -93,7 +93,7 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ## Updates
 
-### Enhanced Sampling Scheme [2]
+### Enhanced Sampling Scheme (ESS) [2]
  We have published a [follow-up paper](https://arxiv.org/abs/2309.07945) [2] that enhances the sampling process by resolving its  existing limitations, which in turn results in considerably higher fidelity.
 To be more precise, we first sample a token set with a naive iterative decoding (existing sampling process) and remove the less-likely tokens, and resample the tokens with a better realism approach for tokens.
 The figure below illustrates the overview of [2].
@@ -109,7 +109,7 @@ The visual results are presented in the following figure:
 You can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`.
 
 
-### Time Series FidelityEnhancer [3]
+### Time Series FidelityEnhancer (TS-FidelityEnhancer) [3]
 We have published a follow-up paper that proposes, _TS-FidelityEnhancer_. 
 It acts like a mapping function such that it transforms a generated time series to be more realistic while retaining the original context.
 <p align="center">
@@ -123,13 +123,13 @@ python stage3.py  --dataset_names CBF BME --gpu_device_idx 0
 then you can generate new time series by running `python evaluate.py` with `evaluation/use_fidelity_enhancer = True` in `configs/config.yaml`.
 
 
-### TimeVQVAE Anomaly Detection, TimeVQVAE-AD [4]
+### TimeVQVAE for Anomaly Detection (TimeVQVAE-AD) [4]
 TimeVQVAE learns a prior, and we can utilize the learned prior to measure the likelihood of a segment of time series,
 in which a high likelihood indicates a normal state while a low likelihood indicates an abnormal state (_i.e.,_ anomaly). 
 With that principal, we have developed TimeVQVAE-AD. 
 It not only achieves a state-of-the-art anomaly detection accuracy on [the UCR Anomaly archive](https://paperswithcode.com/dataset/ucr-anomaly-archive),
 but also provides a high level of explainability, covering counterfactual sampling (_i.e.,_ to answer the following question, "how is the time series supposed look if there was no anomaly?").
-
+If AD is your interest, please check out the paper.
 
 
 ## Citation
