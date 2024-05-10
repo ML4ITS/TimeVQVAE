@@ -62,7 +62,7 @@ class_guidance:
   guidance_scale: 1.
 
 fidelity_enhancer:
-  stochastic_sampling: 1
+  stochastic_sampling: 1  # temperature
   dim: 8
   dim_mults:
     - 1
