@@ -148,6 +148,11 @@ class MaskGIT(nn.Module):
         y: (B, 1)
         straight from [https://github.com/dome272/MaskGIT-pytorch/blob/main/transformer.py]
         """
+        self.encoder_l.eval()
+        self.vq_model_l.eval()
+        self.encoder_h.eval()
+        self.vq_model_h.eval()
+
         device = x.device
         _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
