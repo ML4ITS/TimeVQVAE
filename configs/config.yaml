@@ -74,4 +74,4 @@ fidelity_enhancer:
 evaluation:
   batch_size: 128
   min_num_gen_samples: 1024
-  use_fidelity_enhancer: True
+  use_fidelity_enhancer: False
