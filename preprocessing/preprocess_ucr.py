@@ -33,6 +33,11 @@ class DatasetImporterUCR(object):
         self.X_train, self.X_test = df_train.iloc[:, 1:].values, df_test.iloc[:, 1:].values
         self.Y_train, self.Y_test = df_train.iloc[:, [0]].values, df_test.iloc[:, [0]].values
 
+        # merge train and test sets and split it into 80-20 for training and testing.
+        X = np.concatenate((df_train.iloc[:, 1:].values, df_test.iloc[:, 1:].values), axis=0)
+        Y = np.concatenate((df_train.iloc[:, [0]].values, df_test.iloc[:, [0]].values), axis=0)
+        self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(X, Y, test_size=0.2, random_state=0)
+
         le = LabelEncoder()
         self.Y_train = le.fit_transform(self.Y_train.ravel())[:, None]
         self.Y_test = le.transform(self.Y_test.ravel())[:, None]
