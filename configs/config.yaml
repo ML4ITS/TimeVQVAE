@@ -4,6 +4,7 @@ dataset:
   batch_sizes:
     stage1: 128
     stage2: 256
+    stage3: 128
   num_workers: 0
 
 exp_params:
@@ -14,7 +15,7 @@ trainer_params:
   max_epochs:
     stage1: 2000
     stage2: 10000
-
+    stage3: 2000
 
 encoder:
   dim: 64
@@ -59,3 +60,18 @@ MaskGIT:
 
 class_guidance:
   guidance_scale: 1.
+
+fidelity_enhancer:
+  stochastic_sampling: 1  # temperature
+  dim: 8
+  dim_mults:
+    - 1
+    - 2
+    - 4
+    - 8
+  resnet_block_groups: 4
+
+evaluation:
+  batch_size: 128
+  min_num_gen_samples: 1024
+  use_fidelity_enhancer: False

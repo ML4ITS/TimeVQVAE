@@ -7,6 +7,7 @@ import torch.nn.functional as F
 
 from experiments.exp_base import ExpBase, detach_the_unnecessary
 from generators.maskgit import MaskGIT
+from evaluation.metrics import Metrics
 
 
 class ExpMaskGIT(ExpBase):
@@ -20,6 +21,9 @@ class ExpMaskGIT(ExpBase):
         self.config = config
         self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
         self.T_max = config['trainer_params']['max_epochs']['stage2'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage2']) + 1)
+        
+        metric_batch_size = 32
+        self.metrics = Metrics(dataset_name, metric_batch_size)
 
     def forward(self, x):
         """
@@ -46,33 +50,6 @@ class ExpMaskGIT(ExpBase):
         loss_hist = {'loss': loss,
                      'prior_loss': prior_loss,
                      }
-
-        # maskgit sampling
-        r = np.random.rand()
-        if batch_idx == 0 and r <= 0.05:
-            self.maskgit.eval()
-
-            class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
-
-            # unconditional sampling
-            s_l, s_h = self.maskgit.iterative_decoding(device=x.device, class_index=class_index)
-            x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
-            x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
-            x_new = x_new_l + x_new_h
-
-            b = 0
-            fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
-            axes[0].plot(x_new_l[b,0,:])
-            axes[1].plot(x_new_h[b, 0, :])
-            axes[2].plot(x_new[b, 0, :])
-            axes[0].set_ylim(-4, 4)
-            axes[1].set_ylim(-4, 4)
-            axes[2].set_ylim(-4, 4)
-            plt.title(f'ep_{self.current_epoch}; class-{class_index}')
-            plt.tight_layout()
-            wandb.log({f"maskgit sample": wandb.Image(plt)})
-            plt.close()
-
         detach_the_unnecessary(loss_hist)
         return loss_hist
 
@@ -92,6 +69,41 @@ class ExpMaskGIT(ExpBase):
         loss_hist = {'loss': loss,
                      'prior_loss': prior_loss,
                      }
+        
+        # maskgit sampling
+        if batch_idx == 0 and (self.training == False):
+            self.maskgit.eval()
+
+            class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
+
+            # unconditional sampling
+            s_l, s_h = self.maskgit.iterative_decoding(num=64, device=x.device, class_index=class_index)
+            x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
+            x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
+            x_new = x_new_l + x_new_h
+
+            # plot: generated sample
+            fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
+            b = 0
+            axes[0].plot(x_new_l[b,0,:])
+            axes[1].plot(x_new_h[b, 0, :])
+            axes[2].plot(x_new[b, 0, :])
+            axes[0].set_ylim(-4, 4)
+            axes[1].set_ylim(-4, 4)
+            axes[2].set_ylim(-4, 4)
+            plt.title(f'ep_{self.current_epoch}; class-{class_index}')
+            plt.tight_layout()
+            wandb.log({f"maskgit sample": wandb.Image(plt)})
+            plt.close()
+
+            # compute metrics
+            x_new = x_new.numpy()
+            fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
+            incept_score, _ = self.metrics.inception_score(x_new)
+            wandb.log({'metrics/fid_train_gen': fid_train_gen,
+                       'metrics/fid_test_gen': fid_test_gen,
+                       'metrics/incept_score': incept_score,
+                       'epoch': self.current_epoch})
 
         detach_the_unnecessary(loss_hist)
         return loss_hist

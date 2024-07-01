@@ -3,12 +3,13 @@ import pickle
 import logging
 import yaml
 import tempfile
-from einops import rearrange
+from pathlib import Path
 
+from einops import rearrange
 import torch
 import torch.nn.functional as F
 import numpy as np
-from pathlib import Path
+import pandas as pd
 
 from sklearn.preprocessing import MinMaxScaler
 import requests
@@ -334,3 +335,22 @@ def download_ucr_datasets(url='https://figshare.com/ndownloader/files/37909926',
             ff.extractall(path=dirname)
     else:
         pass
+
+
+def get_target_ucr_dataset_names(args, ):
+    if args.dataset_names:
+        dataset_names = args.dataset_names
+    else:
+        data_summary_ucr = pd.read_csv(get_root_dir().joinpath('datasets', 'DataSummary_UCR.csv'))
+        dataset_names = data_summary_ucr['Name'].tolist()
+        # if args.data_summary_ucr_condition_query:
+        #     dataset_names = data_summary_ucr.query(args.data_summary_ucr_condition_query)['Name'].values  # e.g., "500 <= Train <= 1000" for `data_summary_ucr_condition_query`
+        # if args.n_dataset_partitions == 1:
+        #     pass
+        # elif args.n_dataset_partitions >= 1:
+        # b = int(np.ceil(len(dataset_names) / args.n_dataset_partitions))
+        # dataset_names = dataset_names[args.partition_idx * b: (args.partition_idx + 1) * b]
+        # else:
+        #     raise ValueError
+    return dataset_names
+

@@ -54,7 +54,9 @@ def train_stage2(config: dict,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
                          max_epochs=config['trainer_params']['max_epochs']['stage2'],
                          devices=[gpu_device_idx,],
-                         accelerator='gpu')
+                         accelerator='gpu',
+                         check_val_every_n_epoch=10, #int(np.ceil(config['trainer_params']['max_epochs']['stage2'] / 100),)
+                         )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
                 val_dataloaders=test_data_loader if do_validate else None
@@ -69,21 +71,32 @@ def train_stage2(config: dict,
 
     # test
     print('evaluating...')
-    input_length = train_data_loader.dataset.X.shape[-1]
-    n_classes = len(np.unique(train_data_loader.dataset.Y))
     evaluation = Evaluation(dataset_name, gpu_device_idx, config)
-    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], config['dataset']['batch_sizes']['stage2']),
-                                    input_length,
-                                    n_classes,
-                                    'unconditional')
-    z_test, z_gen = evaluation.compute_z(x_gen)
-    fid, (z_test, z_gen) = evaluation.fid_score(z_test, z_gen)
-    IS_mean, IS_std = evaluation.inception_score(x_gen)
-    wandb.log({'FID': fid, 'IS_mean': IS_mean, 'IS_std': IS_std})
+    min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
+    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
+    z_train = evaluation.compute_z('train')
+    z_test = evaluation.compute_z('test')
+    z_gen = evaluation.compute_z_gen(x_gen)
 
-    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
-    evaluation.log_pca(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
-    evaluation.log_tsne(min(1000, evaluation.X_test.shape[0]), x_gen, z_test, z_gen)
+    # fid_train = evaluation.fid_score(z_test, z_gen)
+    IS_mean, IS_std = evaluation.inception_score(x_gen)
+    wandb.log({'FID_train_gen': evaluation.fid_score(z_train, z_gen),
+               'FID_test_gen': evaluation.fid_score(z_test, z_gen),
+               'FID_train_test': evaluation.fid_score(z_train, z_test),
+               'IS_mean': IS_mean,
+               'IS_std': IS_std})
+
+    # evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, x_gen,
+                                     'X_train vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, evaluation.X_test,
+                                     'X_train vs X_test')
+
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
+    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
+
     wandb.finish()
 
 
@@ -103,5 +116,4 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=False)
-
+        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)

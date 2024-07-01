@@ -101,11 +101,12 @@ class UCRDataset(Dataset):
 if __name__ == "__main__":
     import os
     import matplotlib.pyplot as plt
+    import torch
     from torch.utils.data import DataLoader
     os.chdir("../")
 
     # data pipeline
-    dataset_importer = DatasetImporterUCR("Wafer", data_scaling=True)
+    dataset_importer = DatasetImporterUCR("ScreenType", data_scaling=True)
     dataset = UCRDataset("train", dataset_importer)
     data_loader = DataLoader(dataset, batch_size=32, num_workers=0, shuffle=True)
 
@@ -120,9 +121,14 @@ if __name__ == "__main__":
     # plot
     n_samples = 10
     c = 0
-    fig, axes = plt.subplots(n_samples, 1, figsize=(3.5, 1.7*n_samples))
-    for i, ax in enumerate(axes):
-        ax.plot(x[i, c])
-        ax.set_title(f'class: {y[i,0]}')
+    fig, axes = plt.subplots(n_samples, 2, figsize=(3.5*2, 1.7*n_samples))
+    for i in range(n_samples):
+        axes[i,0].plot(x[i, c])
+        axes[i,0].set_title(f'class: {y[i,0]}')
+        xf = torch.stft(x[[i], c], n_fft=4, hop_length=1, normalized=False)
+        print('xf.shape:', xf.shape)
+        xf = np.sqrt(xf[0,:,:,0]**2 + xf[0,:,:,1]**2)
+        axes[i,1].imshow(xf, aspect='auto')
+        axes[i, 1].invert_yaxis()
     plt.tight_layout()
     plt.show()

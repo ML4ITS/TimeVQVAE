@@ -18,7 +18,7 @@ import matplotlib.pyplot as plt
 
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 from preprocessing.data_pipeline import build_data_pipeline
-from utils import load_yaml_param_settings, get_root_dir
+from utils import load_yaml_param_settings, get_root_dir, get_target_ucr_dataset_names
 from evaluation.cas import SyntheticDataset, ExpFCN
 
 
@@ -31,28 +31,13 @@ def load_args():
     parser.add_argument('--gpu_device_idx', type=int, help="GPU device index", default=0)
     parser.add_argument('--min_n_synthetic_train_samples', type=int, default=1000, help='It ensures a minimum number of a number of synthetic training set size to guarantee `y ∼ pθ(y|x) = pθ(x|y)p(y)/pθ(x)`.')
 
-    parser.add_argument('--n_dataset_partitions', type=int, default=1, help='used to partition all the subset datasets into N groups so that each group can be run separately.')
-    parser.add_argument('--partition_idx', default=0, type=int, help='selects one partitions among the N partitions; {0, 1, ..., n_dataset_partitions-1}')
-    parser.add_argument('--data_summary_ucr_condition_query', type=str, default='', help="query to condition `data_summary_ucr_condition_query` to narrow target subset datasets.")
+    # parser.add_argument('--n_dataset_partitions', type=int, default=1, help='used to partition all the subset datasets into N groups so that each group can be run separately.')
+    # parser.add_argument('--partition_idx', default=0, type=int, help='selects one partitions among the N partitions; {0, 1, ..., n_dataset_partitions-1}')
+    # parser.add_argument('--data_summary_ucr_condition_query', type=str, default='', help="query to condition `data_summary_ucr_condition_query` to narrow target subset datasets.")
     return parser.parse_args()
 
 
-def get_target_ucr_dataset_names(args, ):
-    if args.dataset_names:
-        dataset_names = args.dataset_names
-    else:
-        data_summary_ucr = pd.read_csv(get_root_dir().joinpath('datasets', 'DataSummary_UCR.csv'))
-        dataset_names = data_summary_ucr['Name'].tolist()
-        if args.data_summary_ucr_condition_query:
-            dataset_names = data_summary_ucr.query(args.data_summary_ucr_condition_query)['Name'].values  # e.g., "500 <= Train <= 1000" for `data_summary_ucr_condition_query`
-        if args.n_dataset_partitions == 1:
-            pass
-        elif args.n_dataset_partitions >= 1:
-            b = int(np.ceil(len(dataset_names) / args.n_dataset_partitions))
-            dataset_names = dataset_names[args.partition_idx * b: (args.partition_idx + 1) * b]
-        else:
-            raise ValueError
-    return dataset_names
+
 
 
 if __name__ == '__main__':
