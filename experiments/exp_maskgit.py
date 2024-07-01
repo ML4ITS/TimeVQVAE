@@ -20,7 +20,6 @@ class ExpMaskGIT(ExpBase):
         super().__init__()
         self.config = config
         self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
-        self.T_max = config['trainer_params']['max_epochs']['stage2'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage2']) + 1)
         
         metric_batch_size = 32
         self.metrics = Metrics(dataset_name, metric_batch_size)
@@ -55,6 +54,7 @@ class ExpMaskGIT(ExpBase):
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
+        self.eval()
         x, y = batch
 
         logits, target = self.maskgit(x, y)
@@ -77,7 +77,8 @@ class ExpMaskGIT(ExpBase):
             class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
 
             # unconditional sampling
-            s_l, s_h = self.maskgit.iterative_decoding(num=64, device=x.device, class_index=class_index)
+            n_samples = 1024 #128
+            s_l, s_h = self.maskgit.iterative_decoding(num=n_samples, device=x.device, class_index=class_index)
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
@@ -96,6 +97,18 @@ class ExpMaskGIT(ExpBase):
             wandb.log({f"maskgit sample": wandb.Image(plt)})
             plt.close()
 
+            # plot generated samples
+            n_plot_cols = min(int(np.ceil(np.sqrt(x_new.shape[0]))), 8)
+            fig, axes = plt.subplots(n_plot_cols, n_plot_cols, figsize=(3*n_plot_cols, 2*n_plot_cols))  #plt.subplots(1, 2, figsize=(16, 8))
+            axes = axes.flatten()
+            fig.suptitle(f'x_new | ep-{self.current_epoch}')
+            for i, ax in enumerate(axes):
+                c = 0
+                ax.plot(x_new[i,c])
+            plt.tight_layout()
+            self.logger.log_image(key='prior_model sample', images=[wandb.Image(plt),])
+            plt.close()
+
             # compute metrics
             x_new = x_new.numpy()
             fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
@@ -109,10 +122,11 @@ class ExpMaskGIT(ExpBase):
         return loss_hist
 
     def configure_optimizers(self):
+        T_max = self.config['trainer_params']['max_steps']['stage2']
         opt = torch.optim.AdamW([{'params': self.maskgit.parameters(), 'lr': self.config['exp_params']['LR']},
                                  ],
                                 weight_decay=self.config['exp_params']['weight_decay'])
-        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, self.T_max)}
+        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 
     def test_step(self, batch, batch_idx):
         x, y = batch

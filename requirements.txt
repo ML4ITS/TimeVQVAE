@@ -7,7 +7,7 @@ PyYAML
 Requests
 scikit_learn
 scipy
-supervised_fcn
+supervised-fcn-2
 x_transformers==1.7.15
 wandb
 

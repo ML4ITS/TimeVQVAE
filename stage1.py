@@ -37,7 +37,7 @@ def train_stage1(config: dict,
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
-    project_name = 'TimeVQVAE-stage1'
+    project_name = '[c-timevqvae] TimeVQVAE-stage1'
 
     # fit
     input_length = train_data_loader.dataset.X.shape[-1]
@@ -48,10 +48,11 @@ def train_stage1(config: dict,
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage1'],
+                         max_steps=config['trainer_params']['max_steps']['stage1'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=int(np.ceil(config['trainer_params']['max_epochs']['stage1'] / 100)),
+                         val_check_interval=config['trainer_params']['val_check_interval']['stage1'],
+                         check_val_every_n_epoch=None,
                          )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,

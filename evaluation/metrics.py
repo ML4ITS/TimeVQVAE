@@ -15,15 +15,15 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
-from supervised_FCN.example_compute_FID import calculate_fid
-from supervised_FCN.example_compute_IS import calculate_inception_score
+from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
+from supervised_FCN_2.example_compute_FID import calculate_fid
+from supervised_FCN_2.example_compute_IS import calculate_inception_score
 
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 from utils import freeze
 
 
-class Metrics(object):
+class Metrics(nn.Module):
     """
     - FID
     - IS
@@ -32,6 +32,7 @@ class Metrics(object):
     - t-SNE
     """
     def __init__(self, dataset_name: str, batch_size: int):
+        super().__init__()
         self.dataset_name = dataset_name
         self.batch_size = batch_size
 

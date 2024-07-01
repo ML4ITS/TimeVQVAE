@@ -3,7 +3,7 @@ from collections import Counter
 import torch
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
-from supervised_FCN.experiments.exp_train import ExpFCN as ExpFCN_original
+from supervised_FCN_2.experiments.exp_train import ExpFCN as ExpFCN_original
 
 from generators.sample import Sampler
 

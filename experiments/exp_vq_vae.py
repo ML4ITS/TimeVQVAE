@@ -8,7 +8,7 @@ import wandb
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from experiments.exp_base import ExpBase, detach_the_unnecessary
 from vector_quantization import VectorQuantize
-from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
+from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from utils import compute_downsample_rate, freeze, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize
 
 
@@ -24,7 +24,7 @@ class ExpVQVAE(ExpBase):
         """
         super().__init__()
         self.config = config
-        self.T_max = config['trainer_params']['max_epochs']['stage1'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage1']) + 1)
+        # self.T_max = config['trainer_params']['max_epochs']['stage1'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage1']) + 1)
 
         self.n_fft = config['VQ-VAE']['n_fft']
         dim = config['encoder']['dim']
@@ -164,7 +164,9 @@ class ExpVQVAE(ExpBase):
         detach_the_unnecessary(loss_hist)
         return loss_hist
 
+    @torch.no_grad()
     def validation_step(self, batch, batch_idx):
+        self.eval()
         x = batch
         recons_loss, vq_losses, perplexities = self.forward(x)
         loss = (recons_loss['LF.time'] + recons_loss['HF.time'] +
@@ -202,7 +204,8 @@ class ExpVQVAE(ExpBase):
                                  {'params': self.vq_model_h.parameters(), 'lr': self.config['exp_params']['LR']},
                                  ],
                                 weight_decay=self.config['exp_params']['weight_decay'])
-        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, self.T_max)}
+        T_max = self.config['trainer_params']['max_steps']['stage1']
+        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 
     def test_step(self, batch, batch_idx):
         x = batch

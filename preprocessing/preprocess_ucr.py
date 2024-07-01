@@ -6,7 +6,7 @@ import math
 
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 from torch.utils.data import Dataset
 from sklearn.preprocessing import LabelEncoder
 
@@ -36,7 +36,11 @@ class DatasetImporterUCR(object):
         # merge train and test sets and split it into 80-20 for training and testing.
         X = np.concatenate((df_train.iloc[:, 1:].values, df_test.iloc[:, 1:].values), axis=0)
         Y = np.concatenate((df_train.iloc[:, [0]].values, df_test.iloc[:, [0]].values), axis=0)
-        self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(X, Y, test_size=0.2, random_state=0)
+        # self.X_train, self.X_test, self.Y_train, self.Y_test = train_test_split(X, Y, test_size=0.2, random_state=0)
+        sss = StratifiedShuffleSplit(n_splits=1, test_size=0.2, random_state=0)  # Create a StratifiedShuffleSplit object
+        for train_index, test_index in sss.split(X, Y):
+            self.X_train, self.X_test = X[train_index], X[test_index]
+            self.Y_train, self.Y_test = Y[train_index], Y[test_index]
 
         le = LabelEncoder()
         self.Y_train = le.fit_transform(self.Y_train.ravel())[:, None]

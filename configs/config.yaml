@@ -2,8 +2,8 @@ dataset:
   in_channels: 1
   data_scaling: True
   batch_sizes:
-    stage1: 128
-    stage2: 256
+    stage1: 64
+    stage2: 32 #256  # 32 is the batch size used in c-TimeVQVAE
     stage3: 128
   num_workers: 0
 
@@ -12,10 +12,16 @@ exp_params:
   weight_decay: 0.00001
 
 trainer_params:
-  max_epochs:
-    stage1: 2000
+  # max_epochs:
+  #   stage1: 2000
+  #   stage2: 10000
+    # stage3: 2000
+  max_steps:
+    stage1: 5000
+    stage2: 100000
+  val_check_interval:
+    stage1: 500
     stage2: 10000
-    stage3: 2000
 
 encoder:
   dim: 64
