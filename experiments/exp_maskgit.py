@@ -4,23 +4,21 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 import numpy as np
 import torch.nn.functional as F
+import pytorch_lightning as pl
 
-from experiments.exp_base import ExpBase, detach_the_unnecessary
 from generators.maskgit import MaskGIT
 from evaluation.metrics import Metrics
 
 
-class ExpMaskGIT(ExpBase):
+class ExpMaskGIT(pl.LightningModule):
     def __init__(self,
                  dataset_name: str,
                  input_length: int,
                  config: dict,
-                 n_train_samples: int,
                  n_classes: int):
         super().__init__()
         self.config = config
         self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
-        self.T_max = config['trainer_params']['max_epochs']['stage2'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage2']) + 1)
         
         metric_batch_size = 32
         self.metrics = Metrics(dataset_name, metric_batch_size)
@@ -34,43 +32,36 @@ class ExpMaskGIT(ExpBase):
     def training_step(self, batch, batch_idx):
         x, y = batch
 
-        logits, target = self.maskgit(x, y)
-        logits_l, logits_h = logits
-        target_l, target_h = target
-        prior_loss_l = F.cross_entropy(logits_l.reshape(-1, logits_l.size(-1)), target_l.reshape(-1))
-        prior_loss_h = F.cross_entropy(logits_h.reshape(-1, logits_h.size(-1)), target_h.reshape(-1))
-        prior_loss = (prior_loss_l + prior_loss_h)/2
-        loss = (prior_loss_l + prior_loss_h)/2
+        prior_loss = self.maskgit(x, y)
 
         # lr scheduler
         sch = self.lr_schedulers()
         sch.step()
 
         # log
-        loss_hist = {'loss': loss,
+        loss_hist = {'loss': prior_loss,
                      'prior_loss': prior_loss,
                      }
-        detach_the_unnecessary(loss_hist)
+        for k in loss_hist.keys():
+            self.log(f'train/{k}', loss_hist[k])
+
         return loss_hist
 
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
+        self.eval()
         x, y = batch
 
-        logits, target = self.maskgit(x, y)
-        logits_l, logits_h = logits
-        target_l, target_h = target
-        prior_loss_l = F.cross_entropy(logits_l.reshape(-1, logits_l.size(-1)), target_l.reshape(-1))
-        prior_loss_h = F.cross_entropy(logits_h.reshape(-1, logits_h.size(-1)), target_h.reshape(-1))
-        prior_loss = (prior_loss_l + prior_loss_h)/2
-        loss = (prior_loss_l + prior_loss_h)/2
+        prior_loss = self.maskgit(x, y)
 
         # log
-        loss_hist = {'loss': loss,
+        loss_hist = {'loss': prior_loss,
                      'prior_loss': prior_loss,
                      }
+        for k in loss_hist.keys():
+            self.log(f'val/{k}', loss_hist[k])
         
-        # maskgit sampling
+        # maskgit sampling & evaluation
         if batch_idx == 0 and (self.training == False):
             self.maskgit.eval()
 
@@ -93,42 +84,36 @@ class ExpMaskGIT(ExpBase):
             axes[2].set_ylim(-4, 4)
             plt.title(f'ep_{self.current_epoch}; class-{class_index}')
             plt.tight_layout()
-            wandb.log({f"maskgit sample": wandb.Image(plt)})
+            self.logger.log_image(key='prior_model sample', images=[wandb.Image(plt),])
             plt.close()
 
             # compute metrics
             x_new = x_new.numpy()
             fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
             incept_score, _ = self.metrics.inception_score(x_new)
-            wandb.log({'metrics/fid_train_gen': fid_train_gen,
-                       'metrics/fid_test_gen': fid_test_gen,
-                       'metrics/incept_score': incept_score,
-                       'epoch': self.current_epoch})
+            self.log('metrics/fid_train_gen', fid_train_gen)
+            self.log('metrics/fid_test_gen', fid_test_gen)
+            self.log('metrics/incept_score', incept_score)
 
-        detach_the_unnecessary(loss_hist)
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW([{'params': self.maskgit.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 ],
-                                weight_decay=self.config['exp_params']['weight_decay'])
-        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, self.T_max)}
+        opt = torch.optim.AdamW(self.parameters(), weight_decay=self.config['exp_params']['weight_decay'], lr=self.config['exp_params']['LR'])
+        T_max = self.config['trainer_params']['max_steps']['stage2']
+        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 
+    @torch.no_grad()
     def test_step(self, batch, batch_idx):
+        self.eval()
         x, y = batch
 
-        logits, target = self.maskgit(x, y)
-        logits_l, logits_h = logits
-        target_l, target_h = target
-        prior_loss_l = F.cross_entropy(logits_l.reshape(-1, logits_l.size(-1)), target_l.reshape(-1))
-        prior_loss_h = F.cross_entropy(logits_h.reshape(-1, logits_h.size(-1)), target_h.reshape(-1))
-        prior_loss = (prior_loss_l + prior_loss_h)/2
-        loss = (prior_loss_l + prior_loss_h)/2
+        prior_loss = self.maskgit(x, y)
 
         # log
-        loss_hist = {'loss': loss,
+        loss_hist = {'loss': prior_loss,
                      'prior_loss': prior_loss,
                      }
+        for k in loss_hist.keys():
+            self.log(f'test/{k}', loss_hist[k])
 
-        detach_the_unnecessary(loss_hist)
         return loss_hist

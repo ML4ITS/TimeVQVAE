@@ -23,7 +23,7 @@ from preprocessing.preprocess_ucr import DatasetImporterUCR
 from utils import freeze
 
 
-class Metrics(object):
+class Metrics(nn.Module):
     """
     - FID
     - IS
@@ -32,6 +32,7 @@ class Metrics(object):
     - t-SNE
     """
     def __init__(self, dataset_name: str, batch_size: int):
+        super().__init__()
         self.dataset_name = dataset_name
         self.batch_size = batch_size
 

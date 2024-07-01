@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import matplotlib.pyplot as plt
 import wandb
+import pytorch_lightning as pl
 
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from experiments.exp_base import ExpBase, detach_the_unnecessary
@@ -12,11 +13,10 @@ from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
 from utils import compute_downsample_rate, freeze, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize
 
 
-class ExpVQVAE(ExpBase):
+class ExpVQVAE(pl.LightningModule):
     def __init__(self,
                  input_length: int,
-                 config: dict,
-                 n_train_samples: int):
+                 config: dict):
         """
         :param input_length: length of input time series
         :param config: configs/config.yaml
@@ -24,7 +24,6 @@ class ExpVQVAE(ExpBase):
         """
         super().__init__()
         self.config = config
-        self.T_max = config['trainer_params']['max_epochs']['stage1'] * (np.ceil(n_train_samples / config['dataset']['batch_sizes']['stage1']) + 1)
 
         self.n_fft = config['VQ-VAE']['n_fft']
         dim = config['encoder']['dim']
@@ -50,7 +49,7 @@ class ExpVQVAE(ExpBase):
             self.fcn.eval()
             freeze(self.fcn)
 
-    def forward(self, batch):
+    def forward(self, batch, batch_idx):
         """
         :param x: input time series (B, C, L)
         """
@@ -104,8 +103,9 @@ class ExpVQVAE(ExpBase):
             recons_loss['perceptual'] = F.mse_loss(z_fcn, zhat_fcn)
 
         # plot `x` and `xhat`
-        r = np.random.rand()
-        if self.training and r <= 0.05:
+        # r = np.random.rand()
+        # if self.training and r <= 0.05:
+        if not self.training and batch_idx == 0:
             b = np.random.randint(0, x_h.shape[0])
             c = np.random.randint(0, x_h.shape[1])
 
@@ -127,14 +127,13 @@ class ExpVQVAE(ExpBase):
             axes[2].set_ylim(-4, 4)
 
             plt.tight_layout()
-            wandb.log({"x vs xhat (training)": wandb.Image(plt)})
+            wandb.log({"x vs xhat (val)": wandb.Image(plt)})
             plt.close()
 
         return recons_loss, vq_losses, perplexities
 
     def training_step(self, batch, batch_idx):
-        x = batch
-        recons_loss, vq_losses, perplexities = self.forward(x)
+        recons_loss, vq_losses, perplexities = self.forward(batch, batch_idx)
         loss = (recons_loss['LF.time'] + recons_loss['HF.time'] +
                 recons_loss['LF.timefreq'] + recons_loss['HF.timefreq']) + \
                 vq_losses['LF']['loss'] + vq_losses['HF']['loss'] + \
@@ -160,13 +159,18 @@ class ExpVQVAE(ExpBase):
 
                      'perceptual': recons_loss['perceptual']
                      }
+        
+        # log
+        for k in loss_hist.keys():
+            self.log(f'train/{k}', loss_hist[k])
 
-        detach_the_unnecessary(loss_hist)
         return loss_hist
 
+    @torch.no_grad()
     def validation_step(self, batch, batch_idx):
-        x = batch
-        recons_loss, vq_losses, perplexities = self.forward(x)
+        self.eval()
+
+        recons_loss, vq_losses, perplexities = self.forward(batch, batch_idx)
         loss = (recons_loss['LF.time'] + recons_loss['HF.time'] +
                 recons_loss['LF.timefreq'] + recons_loss['HF.timefreq']) + \
                 vq_losses['LF']['loss'] + vq_losses['HF']['loss'] + \
@@ -188,23 +192,22 @@ class ExpVQVAE(ExpBase):
 
                      'perceptual': recons_loss['perceptual']
                      }
+        
+        # log
+        for k in loss_hist.keys():
+            self.log(f'val/{k}', loss_hist[k])
 
-        detach_the_unnecessary(loss_hist)
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW([{'params': self.encoder_l.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 {'params': self.decoder_l.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 {'params': self.vq_model_l.parameters(), 'lr': self.config['exp_params']['LR']},
+        opt = torch.optim.AdamW(self.parameters(), weight_decay=self.config['exp_params']['weight_decay'], lr=self.config['exp_params']['LR'])
+        T_max = self.config['trainer_params']['max_steps']['stage1']
+        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 
-                                 {'params': self.encoder_h.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 {'params': self.decoder_h.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 {'params': self.vq_model_h.parameters(), 'lr': self.config['exp_params']['LR']},
-                                 ],
-                                weight_decay=self.config['exp_params']['weight_decay'])
-        return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, self.T_max)}
-
+    @torch.no_grad()
     def test_step(self, batch, batch_idx):
+        self.eval()
+
         x = batch
         recons_loss, vq_losses, perplexities = self.forward(x)
         loss = (recons_loss['LF.time'] + recons_loss['HF.time'] +
@@ -228,6 +231,9 @@ class ExpVQVAE(ExpBase):
 
                      'perceptual': recons_loss['perceptual']
                      }
+        
+        # log
+        for k in loss_hist.keys():
+            self.log(f'test/{k}', loss_hist[k])
 
-        detach_the_unnecessary(loss_hist)
         return loss_hist

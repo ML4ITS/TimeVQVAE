@@ -2,14 +2,12 @@ einops
 matplotlib
 numpy
 pandas
-pytorch_lightning==1.9.0
+torch
+pytorch_lightning
 PyYAML
 Requests
 scikit_learn
 scipy
 supervised_fcn
-x_transformers==1.7.15
+x_transformers
 wandb
-
--f https://download.pytorch.org/whl/torch_stable.html
-torch==1.13.1+cu117

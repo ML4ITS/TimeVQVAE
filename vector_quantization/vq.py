@@ -13,7 +13,6 @@ from einops import rearrange, repeat
 from contextlib import contextmanager
 
 from utils import *
-from x_transformers import ContinuousTransformerWrapper, Encoder as TFEncoder, Decoder as TFDecoder
 
 
 def exists(val):
@@ -192,7 +191,7 @@ class EuclideanCodebook(nn.Module):
         self.replace(batch_samples, mask=expired_codes)
 
     @autocast(enabled=False)
-    def forward(self, x):
+    def forward(self, x, svq_temp:Union[float,None]=None):
         shape, dtype = x.shape, x.dtype
         flatten = rearrange(x, '... d -> (...) d')
 
@@ -210,10 +209,11 @@ class EuclideanCodebook(nn.Module):
                 + embed.pow(2).sum(0, keepdim=True)
         )
         # embed_ind = gumbel_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
+        temp = 0. if not svq_temp else svq_temp
         if self.training:
-            embed_ind = softmax_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
+            embed_ind = softmax_sample(dist, dim=-1, temperature=temp)
         else:
-            embed_ind = softmax_sample(dist, dim=-1, temperature=0.)  # no stochasticity
+            embed_ind = softmax_sample(dist, dim=-1, temperature=temp)  # no stochasticity
         embed_onehot = F.one_hot(embed_ind, self.codebook_size).type(dtype)
         embed_ind = embed_ind.view(*shape[:-1])
         quantize = F.embedding(embed_ind, self.embed)
@@ -309,7 +309,7 @@ class VectorQuantize(nn.Module):
     def codebook(self):
         return self._codebook.embed
 
-    def forward(self, x):
+    def forward(self, x, svq_temp:Union[float,None]=None):
         """
         x: (B, N, D)
         """
@@ -332,7 +332,7 @@ class VectorQuantize(nn.Module):
         if is_multiheaded:
             x = rearrange(x, 'b n (h d) -> (b h) n d', h=heads)
 
-        quantize, embed_ind = self._codebook(x)
+        quantize, embed_ind = self._codebook(x, svq_temp)
 
         if self.training:
             quantize = x + (quantize - x).detach()  # allows `z`-part to be trainable while `z_q`-part is un-trainable. `z_q` is updated by the EMA.

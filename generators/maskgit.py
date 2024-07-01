@@ -1,3 +1,4 @@
+import os
 import copy
 import torch
 import torch.nn as nn
@@ -16,6 +17,7 @@ from generators.bidirectional_transformer import BidirectionalTransformer
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from vector_quantization.vq import VectorQuantize
 
+from experiments.exp_vq_vae import ExpVQVAE
 from utils import compute_downsample_rate, get_root_dir, freeze, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
 
 
@@ -28,7 +30,6 @@ class MaskGIT(nn.Module):
                  dataset_name: str,
                  input_length: int,
                  choice_temperatures: dict,
-                 stochastic_sampling: int,
                  T: int,
                  config: dict,
                  n_classes: int,
@@ -43,44 +44,24 @@ class MaskGIT(nn.Module):
         self.mask_token_ids = {'LF': config['VQ-VAE']['codebook_sizes']['lf'], 'HF': config['VQ-VAE']['codebook_sizes']['hf']}
         self.gamma = self.gamma_func("cosine")
 
-        # define encoder, decoder, vq_models
-        dim = config['encoder']['dim']
-        in_channels = config['dataset']['in_channels']
-        downsampled_width_l = config['encoder']['downsampled_width']['lf']
-        downsampled_width_h = config['encoder']['downsampled_width']['hf']
+        # load the staeg1 model
+        self.stage1 = ExpVQVAE.load_from_checkpoint(os.path.join('saved_models', f'stage1-{dataset_name}.ckpt'), 
+                                                    dataset_name=dataset_name, 
+                                                    input_length=input_length, 
+                                                    n_classes=n_classes,
+                                                    config=config,
+                                                    map_location='cpu')
+        freeze(self.stage1)
+        self.stage1.eval()
+
         self.n_fft = config['VQ-VAE']['n_fft']
-        downsample_rate_l = compute_downsample_rate(input_length, self.n_fft, downsampled_width_l)
-        downsample_rate_h = compute_downsample_rate(input_length, self.n_fft, downsampled_width_h)
-        self.encoder_l = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'])
-        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'])
-        self.vq_model_l = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
-        self.encoder_h = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'])
-        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'])
-        self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
-        # load trained models for encoder, decoder, and vq_models
-        self.load(self.encoder_l, get_root_dir().joinpath('saved_models'), f'encoder_l-{dataset_name}.ckpt')
-        self.load(self.decoder_l, get_root_dir().joinpath('saved_models'), f'decoder_l-{dataset_name}.ckpt')
-        self.load(self.vq_model_l, get_root_dir().joinpath('saved_models'), f'vq_model_l-{dataset_name}.ckpt')
-        self.load(self.encoder_h, get_root_dir().joinpath('saved_models'), f'encoder_h-{dataset_name}.ckpt')
-        self.load(self.decoder_h, get_root_dir().joinpath('saved_models'), f'decoder_h-{dataset_name}.ckpt')
-        self.load(self.vq_model_h, get_root_dir().joinpath('saved_models'), f'vq_model_h-{dataset_name}.ckpt')
-
-        # freeze the models for encoder, decoder, and vq_models
-        freeze(self.encoder_l)
-        freeze(self.decoder_l)
-        freeze(self.vq_model_l)
-        freeze(self.encoder_h)
-        freeze(self.decoder_h)
-        freeze(self.vq_model_h)
-
-        # evaluation model for encoder, decoder, and vq_models
-        self.encoder_l.eval()
-        self.decoder_l.eval()
-        self.vq_model_l.eval()
-        self.encoder_h.eval()
-        self.decoder_h.eval()
-        self.vq_model_h.eval()
+        self.encoder_l = self.stage1.encoder_l
+        self.decoder_l = self.stage1.decoder_l
+        self.vq_model_l = self.stage1.vq_model_l
+        self.encoder_h = self.stage1.encoder_h
+        self.decoder_h = self.stage1.decoder_h
+        self.vq_model_h = self.stage1.vq_model_h
 
         # token lengths
         self.num_tokens_l = self.encoder_l.num_tokens.item()
@@ -94,6 +75,7 @@ class MaskGIT(nn.Module):
         embed_l = nn.Parameter(copy.deepcopy(self.vq_model_l._codebook.embed))  # pretrained discrete tokens (LF)
         embed_h = nn.Parameter(copy.deepcopy(self.vq_model_h._codebook.embed))  # pretrained discrete tokens (HF)
 
+        # transformers
         self.transformer_l = BidirectionalTransformer('LF',
                                                       self.num_tokens_l,
                                                       config['VQ-VAE']['codebook_sizes'],
@@ -114,10 +96,6 @@ class MaskGIT(nn.Module):
                                                       num_tokens_l=self.num_tokens_l,
                                                       )
 
-        # stochastic codebook sampling
-        self.vq_model_l._codebook.sample_codebook_temp = stochastic_sampling
-        self.vq_model_h._codebook.sample_codebook_temp = stochastic_sampling
-
     def load(self, model, dirname, fname):
         """
         model: instance
@@ -130,7 +108,7 @@ class MaskGIT(nn.Module):
             model.load_state_dict(torch.load(dirname.joinpath(fname)))
 
     @torch.no_grad()
-    def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None):
+    def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None, svq_temp:Union[float,None]=None):
         """
         x: (B, C, L)
         """
@@ -139,7 +117,7 @@ class MaskGIT(nn.Module):
         if spectrogram_padding is not None:
             xf = spectrogram_padding(xf)
         z = encoder(xf)  # (b c h w)
-        z_q, indices, vq_loss, perplexity = quantize(z, vq_model)  # (b c h w), (b (h w) h), ...
+        z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp)  # (b c h w), (b (h w) h), ...
         return z_q, indices
 
     def forward(self, x, y):
@@ -157,25 +135,29 @@ class MaskGIT(nn.Module):
         _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
-        # randomly sample `t`
-        t = np.random.uniform(0, 1)
+        # mask tokens
+        s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['LF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+        s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['HF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
 
-        # create masks
-        n_masks_l = math.floor(self.gamma(t) * s_l.shape[1])
-        rand = torch.rand(s_l.shape, device=device)  # (b n)
-        mask_l = torch.zeros(s_l.shape, dtype=torch.bool, device=device)
-        mask_l.scatter_(dim=1, index=rand.topk(n_masks_l, dim=1).indices, value=True)
+        # # randomly sample `t`
+        # t = np.random.uniform(0, 1)
 
-        n_masks_h = math.floor(self.gamma(t) * s_h.shape[1])
-        rand = torch.rand(s_h.shape, device=device)  # (b m)
-        mask_h = torch.zeros(s_h.shape, dtype=torch.bool, device=device)
-        mask_h.scatter_(dim=1, index=rand.topk(n_masks_h, dim=1).indices, value=True)
+        # # create masks
+        # n_masks_l = math.floor(self.gamma(t) * s_l.shape[1])
+        # rand = torch.rand(s_l.shape, device=device)  # (b n)
+        # mask_l = torch.zeros(s_l.shape, dtype=torch.bool, device=device)
+        # mask_l.scatter_(dim=1, index=rand.topk(n_masks_l, dim=1).indices, value=True)
 
-        # masked tokens
-        masked_indices_l = self.mask_token_ids['LF'] * torch.ones_like(s_l, device=device)  # (b n)
-        s_l_M = mask_l * s_l + (~mask_l) * masked_indices_l  # (b n); `~` reverses bool-typed data
-        masked_indices_h = self.mask_token_ids['HF'] * torch.ones_like(s_h, device=device)
-        s_h_M = mask_h * s_h + (~mask_h) * masked_indices_h  # (b m)
+        # n_masks_h = math.floor(self.gamma(t) * s_h.shape[1])
+        # rand = torch.rand(s_h.shape, device=device)  # (b m)
+        # mask_h = torch.zeros(s_h.shape, dtype=torch.bool, device=device)
+        # mask_h.scatter_(dim=1, index=rand.topk(n_masks_h, dim=1).indices, value=True)
+
+        # # masked tokens
+        # masked_indices_l = self.mask_token_ids['LF'] * torch.ones_like(s_l, device=device)  # (b n)
+        # s_l_M = mask_l * s_l + (~mask_l) * masked_indices_l  # (b n); `~` reverses bool-typed data
+        # masked_indices_h = self.mask_token_ids['HF'] * torch.ones_like(s_h, device=device)
+        # s_h_M = mask_h * s_h + (~mask_h) * masked_indices_h  # (b m)
 
         # prediction
         logits_l = self.transformer_l(s_l_M.detach(), class_condition=y)  # (b n codebook_size)
@@ -183,9 +165,41 @@ class MaskGIT(nn.Module):
 
         logits_h = self.transformer_h(s_l.detach(), s_h_M.detach(), class_condition=y)  # (b m codebook_size)
         target_h = s_h  # (b m)
+        
+        # maksed prediction loss
+        logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
+        s_l_on_mask = s_l[~mask_l]  # (bm) where m < n
+        mask_pred_loss_l = F.cross_entropy(logits_l_on_mask.float(), s_l_on_mask.long())
+        
+        logits_h_on_mask = logits_h[~mask_h]  # (bm k) where m < n
+        s_h_on_mask = s_h[~mask_h]  # (bm) where m < n
+        mask_pred_loss_h = F.cross_entropy(logits_h_on_mask.float(), s_h_on_mask.long())
 
-        return [logits_l, logits_h], [target_l, target_h]
+        mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
+        return mask_pred_loss
 
+    def _randomly_mask_tokens(self, s, mask_token_id, device):
+        """
+        s: token set
+        """
+        b, n = s.shape
+        
+        # sample masking indices
+        ratio = np.random.uniform(0, 1, (b,))  # (b,)
+        n_unmasks = np.floor(self.gamma(ratio) * n)  # (b,)
+        n_unmasks = np.clip(n_unmasks, a_min=0, a_max=n-1).astype(int)  # ensures that there's at least one masked token
+        rand = torch.rand((b, n), device=device)  # (b n)
+        mask = torch.zeros((b, n), dtype=torch.bool, device=device)  # (b n)
+
+        for i in range(b):
+            ind = rand[i].topk(n_unmasks[i], dim=-1).indices
+            mask[i].scatter_(dim=-1, index=ind, value=True)
+
+        # mask the token set
+        masked_indices = mask_token_id * torch.ones((b, n), device=device)  # (b n)
+        s_M = mask * s + (~mask) * masked_indices  # (b n); `~` reverses bool-typed data
+        return s_M.long(), mask
+    
     def gamma_func(self, mode="cosine"):
         if mode == "linear":
             return lambda r: 1 - r

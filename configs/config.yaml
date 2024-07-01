@@ -12,21 +12,25 @@ exp_params:
   weight_decay: 0.00001
 
 trainer_params:
-  max_epochs:
-    stage1: 2000
-    stage2: 10000
-    stage3: 2000
+  max_steps:
+    stage1: 5000
+    stage2: 50000
+    stage3: 5000
+  val_check_interval:
+    stage1: 500
+    stage2: 5000
+    stage3: 500
 
 encoder:
   dim: 64
-  n_resnet_blocks: 4
+  n_resnet_blocks: 2
   downsampled_width:
     lf: 8
     hf: 32
 
 decoder:
   dim: 64
-  n_resnet_blocks: 4
+  n_resnet_blocks: 2
 
 
 VQ-VAE:
@@ -45,7 +49,6 @@ MaskGIT:
   choice_temperatures: # for masking
     lf: 4
     hf: 4
-  stochastic_sampling: 1  # from (Lee et al., 2022)
   T: 10
   prior_model:
     hidden_dim: 256
@@ -54,6 +57,7 @@ MaskGIT:
     ff_mult: 1
     use_rmsnorm: True
     p_unconditional: 0.2
+    dropout: 0.3
   ESS:
     use: False
     error_ratio_ma_rate: 0.3
@@ -62,7 +66,7 @@ class_guidance:
   guidance_scale: 1.
 
 fidelity_enhancer:
-  stochastic_sampling: 1  # temperature
+  svq_temp: 1.
   dim: 8
   dim_mults:
     - 1
@@ -70,6 +74,7 @@ fidelity_enhancer:
     - 4
     - 8
   resnet_block_groups: 4
+  dropout: 0.3
 
 evaluation:
   batch_size: 128

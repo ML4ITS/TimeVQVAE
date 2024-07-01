@@ -4,6 +4,7 @@ import logging
 import yaml
 import tempfile
 from pathlib import Path
+from typing import Union
 
 from einops import rearrange
 import torch
@@ -245,17 +246,17 @@ def compute_cov_loss(z):
     return cov_loss
 
 
-def quantize(z, vq_model, transpose_channel_length_axes=False):
+def quantize(z, vq_model, transpose_channel_length_axes=False, svq_temp:Union[float,None]=None):
     input_dim = len(z.shape) - 2
     if input_dim == 2:
         h, w = z.shape[2:]
         z = rearrange(z, 'b c h w -> b (h w) c')
-        z_q, indices, vq_loss, perplexity = vq_model(z)
+        z_q, indices, vq_loss, perplexity = vq_model(z, svq_temp)
         z_q = rearrange(z_q, 'b (h w) c -> b c h w', h=h, w=w)
     elif input_dim == 1:
         if transpose_channel_length_axes:
             z = rearrange(z, 'b c l -> b (l) c')
-        z_q, indices, vq_loss, perplexity = vq_model(z)
+        z_q, indices, vq_loss, perplexity = vq_model(z, svq_temp)
         if transpose_channel_length_axes:
             z_q = rearrange(z_q, 'b (l) c -> b c l')
     else:

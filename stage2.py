@@ -3,6 +3,7 @@ Stage2: prior learning
 
 run `python stage2.py`
 """
+import os
 import copy
 from argparse import ArgumentParser
 
@@ -45,17 +46,18 @@ def train_stage2(config: dict,
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpMaskGIT(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
+    train_exp = ExpMaskGIT(dataset_name, input_length, config, n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
     wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage2'],
+                         max_steps=config['trainer_params']['max_steps']['stage2'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=10, #int(np.ceil(config['trainer_params']['max_epochs']['stage2'] / 100),)
+                         val_check_interval=config['trainer_params']['val_check_interval']['stage2'],
+                         check_val_every_n_epoch=None,
                          )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
@@ -67,11 +69,13 @@ def train_stage2(config: dict,
     wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
-    save_model({'maskgit': train_exp.maskgit}, id=dataset_name)
+    if not os.path.isdir(get_root_dir().joinpath('saved_models')):
+        os.mkdir(get_root_dir().joinpath('saved_models'))
+    trainer.save_checkpoint(os.path.join(f'saved_models', f'stage2-{dataset_name}.ckpt'))
 
     # test
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, gpu_device_idx, config)
+    evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.compute_z('train')

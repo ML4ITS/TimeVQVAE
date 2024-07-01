@@ -150,11 +150,12 @@ class RandomOrLearnedSinusoidalPosEmb(nn.Module):
 # building block modules
 
 class Block(nn.Module):
-    def __init__(self, dim, dim_out, groups = 8):
+    def __init__(self, dim, dim_out, groups = 8, dropout=0.):
         super().__init__()
         self.proj = WeightStandardizedConv2d(dim, dim_out, 3, padding = 1)
         self.norm = nn.GroupNorm(groups, dim_out)
         self.act = nn.SiLU()
+        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, scale_shift = None):
         x = self.proj(x)
@@ -165,18 +166,19 @@ class Block(nn.Module):
             x = x * (scale + 1) + shift
 
         x = self.act(x)
+        x = self.dropout(x)
         return x
 
 class ResnetBlock(nn.Module):
-    def __init__(self, dim, dim_out, *, time_emb_dim = None, groups = 8):
+    def __init__(self, dim, dim_out, *, time_emb_dim = None, groups = 8, dropout=0.):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.SiLU(),
             nn.Linear(time_emb_dim, dim_out * 2)
         ) if exists(time_emb_dim) else None
 
-        self.block1 = Block(dim, dim_out, groups = groups)
-        self.block2 = Block(dim_out, dim_out, groups = groups)
+        self.block1 = Block(dim, dim_out, groups = groups, dropout=dropout)
+        self.block2 = Block(dim_out, dim_out, groups = groups, dropout=dropout)
         self.res_conv = nn.Conv1d(dim, dim_out, 1) if dim != dim_out else nn.Identity()
 
     def forward(self, x, time_emb = None):
@@ -261,6 +263,7 @@ class Unet1D(nn.Module):
         learned_sinusoidal_cond = False,
         random_fourier_features = False,
         learned_sinusoidal_dim = 16,
+        dropout:float=0.,
         **kwargs,
     ):
         super().__init__()
@@ -277,7 +280,7 @@ class Unet1D(nn.Module):
         dims = [init_dim, *map(lambda m: dim * m, dim_mults)]
         in_out = list(zip(dims[:-1], dims[1:]))
 
-        block_klass = partial(ResnetBlock, groups = resnet_block_groups)
+        block_klass = partial(ResnetBlock, groups = resnet_block_groups, dropout=dropout)
 
         # time embeddings
 

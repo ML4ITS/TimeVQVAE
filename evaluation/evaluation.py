@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
+from experiments.exp_maskgit import ExpMaskGIT
 from generators.maskgit import MaskGIT
 from preprocessing.data_pipeline import build_data_pipeline
 from preprocessing.preprocess_ucr import DatasetImporterUCR
@@ -26,7 +27,7 @@ from utils import time_to_timefreq, timefreq_to_time
 from generators.fidelity_enhancer import FidelityEnhancer
 
 
-class Evaluation(object):
+class Evaluation(nn.Module):
     """
     - FID
     - IS
@@ -34,14 +35,15 @@ class Evaluation(object):
     - PCA
     - t-SNE
     """
-    def __init__(self, subset_dataset_name: str, gpu_device_index: int, config: dict):
-        self.subset_dataset_name = subset_dataset_name
+    def __init__(self, subset_dataset_name: str, input_length:int, n_classes:int, gpu_device_index: int, config: dict):
+        super().__init__()
+        self.subset_dataset_name = dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
         self.config = config
         self.batch_size = self.config['evaluation']['batch_size']
 
         # load the pretrained FCN
-        self.fcn = load_pretrained_FCN(subset_dataset_name).to(self.device)
+        self.fcn = load_pretrained_FCN(subset_dataset_name)
         self.fcn.eval()
 
         # load the numpy matrix of the test samples
@@ -51,17 +53,27 @@ class Evaluation(object):
         self.ts_len = self.X_train.shape[-1]  # time series length
         self.n_classes = len(np.unique(dataset_importer.Y_train))
 
-        # load maskgit
-        self.maskgit = MaskGIT(self.subset_dataset_name, self.ts_len, **self.config['MaskGIT'], config=self.config, n_classes=self.n_classes).to(self.device)
-        dataset_name = self.subset_dataset_name
-        fname = f'maskgit-{dataset_name}.ckpt'
-        try:
-            ckpt_fname = os.path.join('saved_models', fname)
-            self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
-        except FileNotFoundError:
-            ckpt_fname = Path(tempfile.gettempdir()).joinpath(fname)
-            self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
-        self.maskgit.eval()
+        # # load maskgit
+        # self.maskgit = MaskGIT(self.subset_dataset_name, self.ts_len, **self.config['MaskGIT'], config=self.config, n_classes=self.n_classes).to(self.device)
+        # dataset_name = self.subset_dataset_name
+        # fname = f'maskgit-{dataset_name}.ckpt'
+        # try:
+        #     ckpt_fname = os.path.join('saved_models', fname)
+        #     self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
+        # except FileNotFoundError:
+        #     ckpt_fname = Path(tempfile.gettempdir()).joinpath(fname)
+        #     self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
+        # self.maskgit.eval()
+
+        # load the stage2 model
+        self.stage2 = ExpMaskGIT.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
+                                                      dataset_name=dataset_name, 
+                                                      input_length=input_length, 
+                                                      n_classes=n_classes,
+                                                      config=config,
+                                                      map_location='cpu')
+        self.stage2.eval()
+        self.maskgit = self.stage2.maskgit
 
         # load domain shifter
         if self.config['evaluation']['use_fidelity_enhancer']:

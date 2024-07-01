@@ -8,7 +8,7 @@ import numpy as np
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, mid_channels=None, bn=False):
+    def __init__(self, in_channels, out_channels, mid_channels=None):
         super(ResBlock, self).__init__()
 
         if mid_channels is None:
@@ -18,12 +18,12 @@ class ResBlock(nn.Module):
             nn.LeakyReLU(),
             nn.Conv2d(in_channels, mid_channels,
                       kernel_size=3, stride=1, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(),
             nn.Conv2d(mid_channels, out_channels,
-                      kernel_size=1, stride=1, padding=0)
+                      kernel_size=1, stride=1, padding=0),
+            nn.Dropout(0.3)
         ]
-        if bn:
-            layers.insert(2, nn.BatchNorm2d(out_channels))
         self.convs = nn.Sequential(*layers)
 
     def forward(self, x):
@@ -40,7 +40,8 @@ class VQVAEEncBlock(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1),
                       padding_mode='replicate'),
             nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(inplace=True))
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(0.3))
 
     def forward(self, x):
         out = self.block(x)
@@ -56,7 +57,8 @@ class VQVAEDecBlock(nn.Module):
         self.block = nn.Sequential(
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
             nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(inplace=True))
+            nn.LeakyReLU(inplace=True),
+            nn.Dropout(0.3))
 
     def forward(self, x):
         out = self.block(x)
@@ -73,7 +75,6 @@ class VQVAEEncoder(nn.Module):
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
-                 bn: bool = True,
                  **kwargs):
         """
         :param d: hidden dimension size
@@ -84,10 +85,14 @@ class VQVAEEncoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
+        # self.encoder = nn.Sequential(
+        #     VQVAEEncBlock(num_channels, d),
+        #     *[VQVAEEncBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
+        #     *[nn.Sequential(ResBlock(d, d)) for _ in range(n_resnet_blocks)],
+        # )
         self.encoder = nn.Sequential(
             VQVAEEncBlock(num_channels, d),
-            *[VQVAEEncBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
-            *[nn.Sequential(ResBlock(d, d, bn=bn), nn.BatchNorm2d(d)) for _ in range(n_resnet_blocks)],
+            *[nn.Sequential(VQVAEEncBlock(d, d), *[ResBlock(d, d) for _ in range(n_resnet_blocks)]) for _ in range(int(np.log2(downsample_rate)) - 1)]
         )
 
         self.is_num_tokens_updated = False
@@ -128,9 +133,15 @@ class VQVAEDecoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
+        # self.decoder = nn.Sequential(
+        #     *[nn.Sequential(ResBlock(d, d)) for _ in range(n_resnet_blocks)],
+        #     *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
+        #     nn.ConvTranspose2d(d, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
+        #     nn.ConvTranspose2d(num_channels, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),  # one more upsampling layer is added not to miss reconstruction details
+        # )
         self.decoder = nn.Sequential(
-            *[nn.Sequential(ResBlock(d, d), nn.BatchNorm2d(d)) for _ in range(n_resnet_blocks)],
-            *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
+            *[nn.Sequential(ResBlock(d, d), *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)]) for _ in range(n_resnet_blocks)],
+            # *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
             nn.ConvTranspose2d(d, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
             nn.ConvTranspose2d(num_channels, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),  # one more upsampling layer is added not to miss reconstruction details
         )

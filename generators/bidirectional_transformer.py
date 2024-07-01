@@ -37,6 +37,7 @@ class BidirectionalTransformer(nn.Module):
                  pretrained_tok_emb_h: nn.Parameter = None,
                  freeze_pretrained_tokens: bool = False,
                  num_tokens_l: int = None,
+                 dropout:float=0.3,
                  **kwargs):
         """
         :param kind:
@@ -78,13 +79,18 @@ class BidirectionalTransformer(nn.Module):
         self.blocks = ContinuousTransformerWrapper(dim_in=in_dim,
                                                    dim_out=in_dim,
                                                    max_seq_len=self.num_tokens + 1,
+                                                   use_abs_pos_emb=False,
+                                                   post_emb_norm=True,
                                                    attn_layers=TFEncoder(
+                                                       pre_norm=True,
                                                        dim=hidden_dim,
                                                        depth=n_layers,
                                                        heads=heads,
                                                        use_rmsnorm=use_rmsnorm,
                                                        ff_mult=ff_mult,
-                                                       use_abs_pos_emb=False,
+                                                       layer_dropout=dropout,
+                                                       attn_dropout=dropout, 
+                                                       ff_dropout=dropout,
                                                    ))
         self.Token_Prediction = nn.Sequential(*[
             nn.Linear(in_features=in_dim, out_features=out_dim),

@@ -91,7 +91,11 @@ Note that the pretrained models are automatically downloaded within the notebook
 * The full result tables for FID, IS, and CAS are available in `results/`.
 
 
-## Updates
+## Update Notes
+
+### Implementation Modifications
+* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
+
 
 ### Enhanced Sampling Scheme (ESS) [2]
  We have published a [follow-up paper](https://arxiv.org/abs/2309.07945) [2] that enhances the sampling process by resolving its  existing limitations, which in turn results in considerably higher fidelity.
@@ -130,6 +134,9 @@ With that principal, we have developed TimeVQVAE-AD.
 It not only achieves a state-of-the-art anomaly detection accuracy on [the UCR Anomaly archive](https://paperswithcode.com/dataset/ucr-anomaly-archive),
 but also provides a high level of explainability, covering counterfactual sampling (_i.e.,_ to answer the following question, "how is the time series supposed look if there was no anomaly?").
 If AD is your interest, please check out the paper.
+
+
+
 
 
 ## Citation

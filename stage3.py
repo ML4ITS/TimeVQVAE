@@ -33,30 +33,27 @@ def train_stage3(config: dict,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
                  gpu_device_idx,
-                 do_validate: bool,
                  ):
-    """
-    :param do_validate: if True, validation is conducted during training with a test dataset.
-    """
     project_name = 'TimeVQVAE-stage3'
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
+    train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
     wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_epochs=config['trainer_params']['max_epochs']['stage3'],
+                         max_steps=config['trainer_params']['max_steps']['stage3'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         check_val_every_n_epoch=round(config['trainer_params']['max_epochs']['stage3'] / 10),)
+                         val_check_interval=config['trainer_params']['val_check_interval']['stage3'],
+                         check_val_every_n_epoch=None)
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
-                val_dataloaders=test_data_loader if do_validate else None
+                val_dataloaders=test_data_loader
                 )
 
     # additional log
@@ -117,5 +114,5 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage3(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)
+        train_stage3(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx)
         torch.cuda.empty_cache()
