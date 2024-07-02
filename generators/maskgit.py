@@ -176,7 +176,7 @@ class MaskGIT(nn.Module):
         mask_pred_loss_h = F.cross_entropy(logits_h_on_mask.float(), s_h_on_mask.long())
 
         mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
-        return mask_pred_loss
+        return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)
 
     def _randomly_mask_tokens(self, s, mask_token_id, device):
         """

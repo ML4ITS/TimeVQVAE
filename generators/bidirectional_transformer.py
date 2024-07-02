@@ -3,7 +3,8 @@ from typing import Union
 
 import torch
 import torch.nn as nn
-from einops import repeat
+import torch.nn.functional as F
+from einops import repeat, rearrange
 from x_transformers import ContinuousTransformerWrapper, Encoder as TFEncoder
 
 
@@ -18,6 +19,26 @@ def load_pretrained_tok_emb(pretrained_tok_emb, tok_emb, freeze_pretrained_token
             tok_emb.weight[:-1, :] = pretrained_tok_emb
             if freeze_pretrained_tokens:
                 tok_emb.weight[:-1, :].requires_grad = False
+
+
+class Upscale(nn.Module):
+    def __init__(self, in_channels:int, out_channels:int, h_dim:int) -> None:
+        super().__init__()
+        self.conv = nn.Sequential(nn.Conv1d(in_channels, h_dim, kernel_size=3, stride=1, padding=1),
+                                  nn.GELU(),
+                                  nn.BatchNorm1d(h_dim),
+                                  nn.Conv1d(h_dim, out_channels, kernel_size=3, stride=1, padding=1),
+                                  )
+
+    def forward(self, x, upscale_size:int):
+        """
+        x: (b n d)
+        """
+        x = rearrange(x, 'b n d -> b d n')  # (b d n)
+        x = F.interpolate(x, size=(upscale_size,), mode='nearest')  # (b d m)
+        x = self.conv(x)  # (b d m)
+        x = rearrange(x, 'b d m -> b m d')
+        return x
 
 
 class BidirectionalTransformer(nn.Module):
@@ -103,7 +124,8 @@ class BidirectionalTransformer(nn.Module):
         self.drop = nn.Dropout(p=0.)
 
         if kind == 'HF':
-            self.projector = nn.Conv1d(num_tokens_l, self.num_tokens, kernel_size=1)
+            # self.projector = nn.Conv1d(num_tokens_l, self.num_tokens, kernel_size=1)
+            self.projector = Upscale(embed_dim, embed_dim, 2*embed_dim)
 
     def class_embedding(self, class_condition: Union[None, torch.Tensor], batch_size: int, device):
         if isinstance(class_condition, torch.Tensor):
@@ -143,9 +165,14 @@ class BidirectionalTransformer(nn.Module):
         device = embed_ind_l.device
 
         token_embeddings_l = self.tok_emb_l(embed_ind_l)  # (b n dim)
-        token_embeddings_l = self.projector(token_embeddings_l)  # (b m dim)
         token_embeddings_h = self.tok_emb_h(embed_ind_h)  # (b m dim)
+
+        if self.training:
+            token_embeddings_l = F.dropout(token_embeddings_l, p=0.3)  # to make the HF prediction process more robust during sampling
+
+        token_embeddings_l = self.projector(token_embeddings_l, upscale_size=token_embeddings_h.shape[1])  # (b m dim)
         token_embeddings = torch.cat((token_embeddings_l, token_embeddings_h), dim=-1)  # (b m 2*dim)
+
         cls_emb = self.class_embedding(class_condition, embed_ind_l.shape[0], device)  # (b 1 2*dim)
 
         n = token_embeddings.shape[1]

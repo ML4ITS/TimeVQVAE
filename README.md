@@ -95,6 +95,7 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ### Implementation Modifications
 * [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used. Also, Dropout is applied to the LF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the HF embedding prediction more robust during sampling.
 
 
 ### Enhanced Sampling Scheme (ESS) [2]

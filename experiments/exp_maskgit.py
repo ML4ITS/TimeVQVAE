@@ -32,15 +32,17 @@ class ExpMaskGIT(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         x, y = batch
 
-        prior_loss = self.maskgit(x, y)
+        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
 
         # lr scheduler
         sch = self.lr_schedulers()
         sch.step()
 
         # log
-        loss_hist = {'loss': prior_loss,
-                     'prior_loss': prior_loss,
+        loss_hist = {'loss': mask_pred_loss,
+                     'mask_pred_loss': mask_pred_loss,
+                     'mask_pred_loss_l': mask_pred_loss_l,
+                     'mask_pred_loss_h': mask_pred_loss_h,
                      }
         for k in loss_hist.keys():
             self.log(f'train/{k}', loss_hist[k])
@@ -52,11 +54,13 @@ class ExpMaskGIT(pl.LightningModule):
         self.eval()
         x, y = batch
 
-        prior_loss = self.maskgit(x, y)
+        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
 
         # log
-        loss_hist = {'loss': prior_loss,
-                     'prior_loss': prior_loss,
+        loss_hist = {'loss': mask_pred_loss,
+                     'mask_pred_loss': mask_pred_loss,
+                     'mask_pred_loss_l': mask_pred_loss_l,
+                     'mask_pred_loss_h': mask_pred_loss_h,
                      }
         for k in loss_hist.keys():
             self.log(f'val/{k}', loss_hist[k])
@@ -107,11 +111,13 @@ class ExpMaskGIT(pl.LightningModule):
         self.eval()
         x, y = batch
 
-        prior_loss = self.maskgit(x, y)
+        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
 
         # log
-        loss_hist = {'loss': prior_loss,
-                     'prior_loss': prior_loss,
+        loss_hist = {'loss': mask_pred_loss,
+                     'mask_pred_loss': mask_pred_loss,
+                     'mask_pred_loss_l': mask_pred_loss_l,
+                     'mask_pred_loss_h': mask_pred_loss_h,
                      }
         for k in loss_hist.keys():
             self.log(f'test/{k}', loss_hist[k])
