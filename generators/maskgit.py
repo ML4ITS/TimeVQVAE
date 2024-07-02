@@ -117,7 +117,7 @@ class MaskGIT(nn.Module):
         if spectrogram_padding is not None:
             xf = spectrogram_padding(xf)
         z = encoder(xf)  # (b c h w)
-        z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp)  # (b c h w), (b (h w) h), ...
+        z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
         return z_q, indices
 
     def forward(self, x, y):

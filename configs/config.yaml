@@ -73,7 +73,9 @@ class_guidance:
   guidance_scale: 1.
 
 fidelity_enhancer:
-  svq_temp: 1.
+  svq_temp_rng:
+    - 1.
+    - 2.
   dim: 8
   dim_mults:
     - 1
@@ -81,7 +83,7 @@ fidelity_enhancer:
     - 4
     - 8
   resnet_block_groups: 4
-  dropout: 0.3
+  dropout: 0.5
 
 evaluation:
   batch_size: 128

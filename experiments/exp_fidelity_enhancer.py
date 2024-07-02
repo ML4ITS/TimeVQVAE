@@ -51,7 +51,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
         self.decoder_h = self.maskgit.decoder_h
         self.vq_model_h = self.maskgit.vq_model_h
 
-        self.svq_temp = self.config['fidelity_enhancer']['svq_temp']
+        self.svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
 
     def forward(self, x):
         """
@@ -79,8 +79,9 @@ class ExpFidelityEnhancer(pl.LightningModule):
         x, y = batch
         x = x.float()
 
-        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=self.svq_temp)  # (b n)
-        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=self.svq_temp)  # (b m)
+        svq_temp = np.random.uniform(*self.svq_temp_rng)
+        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=svq_temp)  # (b n)
+        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=svq_temp)  # (b m)
 
         fidelity_enhancer_loss, (x_a, xhat) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
 
@@ -103,8 +104,9 @@ class ExpFidelityEnhancer(pl.LightningModule):
         x, y = batch
         x = x.float()
 
-        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=self.svq_temp)  # (b n)
-        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=self.svq_temp)  # (b m)
+        svq_temp = np.random.uniform(*self.svq_temp_rng)
+        _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=svq_temp)  # (b n)
+        _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=svq_temp)  # (b m)
 
         fidelity_enhancer_loss, (x_a, xhat) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
 
