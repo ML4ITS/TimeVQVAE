@@ -9,55 +9,62 @@ dataset:
 
 exp_params:
   LR: 0.001
-  weight_decay: 0.00001
 
 trainer_params:
   max_steps:
     stage1: 5000
     stage2: 50000
-    stage3: 5000
+    stage3: 10000
   val_check_interval:
     stage1: 500
     stage2: 500
-    stage3: 500
+    stage3: 100
 
 encoder:
-  dim: 64
+  dim: 128
   n_resnet_blocks: 2
   downsampled_width:
-    lf: 8
+    lf: 8 #32 #8
     hf: 32
 
 decoder:
-  dim: 64
+  dim: 128
   n_resnet_blocks: 2
 
 
 VQ-VAE:
-  n_fft: 8
+  n_fft: 4
   codebook_sizes:
     lf: 32
     hf: 32
   decay: 0.8
   commitment_weight: 1.
-  codebook_dim: 64
+  codebook_dim: 128
+  kmeans_init: True
   emb_dropout: 0.
   perceptual_loss_weight: 0
-
 
 MaskGIT:
   choice_temperatures: # for masking
     lf: 4
     hf: 4
   T: 10
-  prior_model:
-    hidden_dim: 256
+  prior_model_l:
+    hidden_dim: 128
     n_layers: 4
     heads: 2
     ff_mult: 1
     use_rmsnorm: True
     p_unconditional: 0.2
     dropout: 0.3
+  prior_model_h:
+    hidden_dim: 32
+    n_layers: 1
+    heads: 1
+    ff_mult: 1
+    use_rmsnorm: True
+    p_unconditional: 0.2
+    dropout: 0.5
   ESS:
     use: False
     error_ratio_ma_rate: 0.3
@@ -79,4 +86,3 @@ fidelity_enhancer:
 evaluation:
   batch_size: 128
   min_num_gen_samples: 1024
-  use_fidelity_enhancer: False

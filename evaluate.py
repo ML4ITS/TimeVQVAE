@@ -28,31 +28,31 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
+    parser.add_argument('--use_fidelity_enhancer', default=False, type=bool)
     return parser.parse_args()
 
 
-def train_stage2(config: dict,
+def evaluate(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
                  gpu_device_idx,
+                 use_fidelity_enhancer,
                  ):
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpMaskGIT(dataset_name, input_length, config, len(train_data_loader.dataset), n_classes)
+    train_exp = ExpMaskGIT(dataset_name, input_length, config, n_classes)
     config_ = copy.deepcopy(config)
     config_['dataset']['dataset_name'] = dataset_name
-    wandb_logger = WandbLogger(project='TimeVQVAE-evaluation', name=None, config=config_)
-
-    # additional log
-    n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
-    wandb.log({'n_trainable_params:': n_trainable_params})
+    
+    # wandb init
+    wandb.init(config=config_, project='TimeVQVAE-evaluation')
 
     # test
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, gpu_device_idx, config)
+    evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, use_fidelity_enhancer=use_fidelity_enhancer).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.compute_z('train')
@@ -109,7 +109,7 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, args.gpu_device_idx)
+        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer)
 
         # clean memory
         torch.cuda.empty_cache()

@@ -102,7 +102,7 @@ class ExpMaskGIT(pl.LightningModule):
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), weight_decay=self.config['exp_params']['weight_decay'], lr=self.config['exp_params']['LR'])
+        opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['LR'])
         T_max = self.config['trainer_params']['max_steps']['stage2']
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 

@@ -218,7 +218,7 @@ def time_to_timefreq(x, n_fft: int, C: int):
     x: (B, C, L)
     """
     x = rearrange(x, 'b c l -> (b c) l')
-    x = torch.stft(x, n_fft, normalized=False, return_complex=True)
+    x = torch.stft(x, n_fft, normalized=True, return_complex=True)
     x = torch.view_as_real(x)  # (B, N, T, 2); 2: (real, imag)
     x = rearrange(x, '(b c) n t z -> b (c z) n t ', c=C)  # z=2 (real, imag)
     return x  # (B, C, H, W)
@@ -227,7 +227,7 @@ def time_to_timefreq(x, n_fft: int, C: int):
 def timefreq_to_time(x, n_fft: int, C: int):
     x = rearrange(x, 'b (c z) n t -> (b c) n t z', c=C).contiguous()
     x = torch.view_as_complex(x)
-    x = torch.istft(x, n_fft, normalized=False, return_complex=False)
+    x = torch.istft(x, n_fft, normalized=True, return_complex=False)
     x = rearrange(x, '(b c) l -> b c l', c=C)
     return x
 

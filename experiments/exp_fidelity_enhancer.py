@@ -61,12 +61,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
     def fidelity_enhancer_loss_fn(self, x, s_a_l, s_a_h):
         # s -> z -> x
-        # self.vq_model_l.train()
-        # self.vq_model_h.train()
         x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
         x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
-        # self.vq_model_l.eval()
-        # self.vq_model_h.eval()
         x_a = x_a_l + x_a_h  # (b c l)
         x_a = x_a.detach()
 
@@ -103,7 +99,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
     @torch.no_grad()
     def validation_step(self, batch, batch_idx):
         self.eval()
-        
+
         x, y = batch
         x = x.float()
 
@@ -163,8 +159,6 @@ class ExpFidelityEnhancer(pl.LightningModule):
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW([{'params': self.parameters(), 'lr': self.config['exp_params']['LR']}], 
-                                weight_decay=self.config['exp_params']['weight_decay'],
-                                lr=self.config['exp_params']['LR'])
+        opt = torch.optim.AdamW([{'params': self.parameters(), 'lr': self.config['exp_params']['LR']}], lr=self.config['exp_params']['LR'])
         T_max = self.config['trainer_params']['max_steps']['stage3']
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}

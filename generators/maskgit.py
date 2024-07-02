@@ -80,7 +80,7 @@ class MaskGIT(nn.Module):
                                                       self.num_tokens_l,
                                                       config['VQ-VAE']['codebook_sizes'],
                                                       config['VQ-VAE']['codebook_dim'],
-                                                      **config['MaskGIT']['prior_model'],
+                                                      **config['MaskGIT']['prior_model_l'],
                                                       n_classes=n_classes,
                                                       pretrained_tok_emb_l=embed_l,
                                                       )
@@ -89,7 +89,7 @@ class MaskGIT(nn.Module):
                                                       self.num_tokens_h,
                                                       config['VQ-VAE']['codebook_sizes'],
                                                       config['VQ-VAE']['codebook_dim'],
-                                                      **config['MaskGIT']['prior_model'],
+                                                      **config['MaskGIT']['prior_model_h'],
                                                       n_classes=n_classes,
                                                       pretrained_tok_emb_l=embed_l,
                                                       pretrained_tok_emb_h=embed_h,
@@ -138,26 +138,6 @@ class MaskGIT(nn.Module):
         # mask tokens
         s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['LF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
         s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['HF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
-
-        # # randomly sample `t`
-        # t = np.random.uniform(0, 1)
-
-        # # create masks
-        # n_masks_l = math.floor(self.gamma(t) * s_l.shape[1])
-        # rand = torch.rand(s_l.shape, device=device)  # (b n)
-        # mask_l = torch.zeros(s_l.shape, dtype=torch.bool, device=device)
-        # mask_l.scatter_(dim=1, index=rand.topk(n_masks_l, dim=1).indices, value=True)
-
-        # n_masks_h = math.floor(self.gamma(t) * s_h.shape[1])
-        # rand = torch.rand(s_h.shape, device=device)  # (b m)
-        # mask_h = torch.zeros(s_h.shape, dtype=torch.bool, device=device)
-        # mask_h.scatter_(dim=1, index=rand.topk(n_masks_h, dim=1).indices, value=True)
-
-        # # masked tokens
-        # masked_indices_l = self.mask_token_ids['LF'] * torch.ones_like(s_l, device=device)  # (b n)
-        # s_l_M = mask_l * s_l + (~mask_l) * masked_indices_l  # (b n); `~` reverses bool-typed data
-        # masked_indices_h = self.mask_token_ids['HF'] * torch.ones_like(s_h, device=device)
-        # s_h_M = mask_h * s_h + (~mask_h) * masked_indices_h  # (b m)
 
         # prediction
         logits_l = self.transformer_l(s_l_M.detach(), class_condition=y)  # (b n codebook_size)

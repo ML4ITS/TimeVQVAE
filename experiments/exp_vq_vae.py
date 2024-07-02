@@ -34,13 +34,13 @@ class ExpVQVAE(pl.LightningModule):
         downsample_rate_h = compute_downsample_rate(input_length, self.n_fft, downsampled_width_h)
 
         # encoder
-        self.encoder_l = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'])
-        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'])
+        self.encoder_l = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], frequency_indepence=False)
+        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], frequency_indepence=False)
         self.vq_model_l = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
 
         # decoder
-        self.encoder_h = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'])
-        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'])
+        self.encoder_h = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], frequency_indepence=True)
+        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], frequency_indepence=True)
         self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # pre-trained feature extractor in case the perceptual loss is used
@@ -200,7 +200,7 @@ class ExpVQVAE(pl.LightningModule):
         return loss_hist
 
     def configure_optimizers(self):
-        opt = torch.optim.AdamW(self.parameters(), weight_decay=self.config['exp_params']['weight_decay'], lr=self.config['exp_params']['LR'])
+        opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['LR'])
         T_max = self.config['trainer_params']['max_steps']['stage1']
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
 

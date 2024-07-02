@@ -35,7 +35,7 @@ class Evaluation(nn.Module):
     - PCA
     - t-SNE
     """
-    def __init__(self, subset_dataset_name: str, input_length:int, n_classes:int, gpu_device_index: int, config: dict):
+    def __init__(self, subset_dataset_name: str, input_length:int, n_classes:int, gpu_device_index: int, config: dict, use_fidelity_enhancer:bool=False):
         super().__init__()
         self.subset_dataset_name = dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
@@ -53,18 +53,6 @@ class Evaluation(nn.Module):
         self.ts_len = self.X_train.shape[-1]  # time series length
         self.n_classes = len(np.unique(dataset_importer.Y_train))
 
-        # # load maskgit
-        # self.maskgit = MaskGIT(self.subset_dataset_name, self.ts_len, **self.config['MaskGIT'], config=self.config, n_classes=self.n_classes).to(self.device)
-        # dataset_name = self.subset_dataset_name
-        # fname = f'maskgit-{dataset_name}.ckpt'
-        # try:
-        #     ckpt_fname = os.path.join('saved_models', fname)
-        #     self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
-        # except FileNotFoundError:
-        #     ckpt_fname = Path(tempfile.gettempdir()).joinpath(fname)
-        #     self.maskgit.load_state_dict(torch.load(ckpt_fname), strict=False)
-        # self.maskgit.eval()
-
         # load the stage2 model
         self.stage2 = ExpMaskGIT.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
                                                       dataset_name=dataset_name, 
@@ -76,7 +64,7 @@ class Evaluation(nn.Module):
         self.maskgit = self.stage2.maskgit
 
         # load domain shifter
-        if self.config['evaluation']['use_fidelity_enhancer']:
+        if use_fidelity_enhancer:
             self.fidelity_enhancer = FidelityEnhancer(self.ts_len, 1, config)
             fname = f'fidelity_enhancer-{dataset_name}.ckpt'
             ckpt_fname = os.path.join('saved_models', fname)
@@ -97,7 +85,15 @@ class Evaluation(nn.Module):
 
         # domain shifter
         with torch.no_grad():
-            x_new = self.fidelity_enhancer(x_new)
+            num_batches = x_new.shape[0] // self.batch_size + (1 if x_new.shape[0] % self.batch_size != 0 else 0)
+            processed_batches = []
+            for i in range(num_batches):
+                start_idx = i * self.batch_size
+                end_idx = start_idx + self.batch_size
+                mini_batch = x_new[start_idx:end_idx]
+                processed_batch = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
+                processed_batches.append(processed_batch)
+            x_new = torch.cat(processed_batches)
 
         return x_new_l, x_new_h, x_new
 

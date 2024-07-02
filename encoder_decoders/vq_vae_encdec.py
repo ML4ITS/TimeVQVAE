@@ -8,21 +8,24 @@ import numpy as np
 
 
 class ResBlock(nn.Module):
-    def __init__(self, in_channels, out_channels, mid_channels=None):
+    def __init__(self, in_channels, out_channels, frequency_indepence:bool, mid_channels=None, dropout:float=0.):
         super(ResBlock, self).__init__()
 
         if mid_channels is None:
             mid_channels = out_channels
+        
+        kernel_size = (1, 3) if frequency_indepence else (3, 3)
+        padding = (0, 1) if frequency_indepence else (1, 1)
 
         layers = [
             nn.LeakyReLU(),
             nn.Conv2d(in_channels, mid_channels,
-                      kernel_size=3, stride=1, padding=1),
+                      kernel_size=kernel_size, stride=(1, 1), padding=padding),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(),
             nn.Conv2d(mid_channels, out_channels,
-                      kernel_size=1, stride=1, padding=0),
-            nn.Dropout(0.3)
+                      kernel_size=kernel_size, stride=(1, 1), padding=padding),
+            nn.Dropout(dropout)
         ]
         self.convs = nn.Sequential(*layers)
 
@@ -34,14 +37,20 @@ class VQVAEEncBlock(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
+                 frequency_indepence:bool,
+                 dropout:float=0.
                  ):
         super().__init__()
+        
+        kernel_size = (1, 4) if frequency_indepence else (3, 4)
+        padding = (0, 1) if frequency_indepence else (1, 1)
+
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1),
+            nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding,
                       padding_mode='replicate'),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(inplace=True),
-            nn.Dropout(0.3))
+            nn.Dropout(dropout))
 
     def forward(self, x):
         out = self.block(x)
@@ -52,13 +61,19 @@ class VQVAEDecBlock(nn.Module):
     def __init__(self,
                  in_channels,
                  out_channels,
+                 frequency_indepence:bool,
+                 dropout:float=0.
                  ):
         super().__init__()
+        
+        kernel_size = (1, 4) if frequency_indepence else (3, 4)
+        padding = (0, 1) if frequency_indepence else (1, 1)
+
         self.block = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
+            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
             nn.BatchNorm2d(out_channels),
             nn.LeakyReLU(inplace=True),
-            nn.Dropout(0.3))
+            nn.Dropout(dropout))
 
     def forward(self, x):
         out = self.block(x)
@@ -75,6 +90,8 @@ class VQVAEEncoder(nn.Module):
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
+                 frequency_indepence:bool,
+                 dropout:float=0.3,
                  **kwargs):
         """
         :param d: hidden dimension size
@@ -85,14 +102,9 @@ class VQVAEEncoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
-        # self.encoder = nn.Sequential(
-        #     VQVAEEncBlock(num_channels, d),
-        #     *[VQVAEEncBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
-        #     *[nn.Sequential(ResBlock(d, d)) for _ in range(n_resnet_blocks)],
-        # )
         self.encoder = nn.Sequential(
-            VQVAEEncBlock(num_channels, d),
-            *[nn.Sequential(VQVAEEncBlock(d, d), *[ResBlock(d, d) for _ in range(n_resnet_blocks)]) for _ in range(int(np.log2(downsample_rate)) - 1)]
+            VQVAEEncBlock(num_channels, d, frequency_indepence),
+            *[nn.Sequential(VQVAEEncBlock(d, d, frequency_indepence, dropout=dropout), *[ResBlock(d, d, frequency_indepence, dropout=dropout) for _ in range(n_resnet_blocks)]) for _ in range(int(np.log2(downsample_rate)) - 1)]
         )
 
         self.is_num_tokens_updated = False
@@ -124,6 +136,8 @@ class VQVAEDecoder(nn.Module):
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
+                 frequency_indepence:bool,
+                 dropout:float=0.3,
                  **kwargs):
         """
         :param d: hidden dimension size
@@ -133,17 +147,15 @@ class VQVAEDecoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
-        # self.decoder = nn.Sequential(
-        #     *[nn.Sequential(ResBlock(d, d)) for _ in range(n_resnet_blocks)],
-        #     *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
-        #     nn.ConvTranspose2d(d, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
-        #     nn.ConvTranspose2d(num_channels, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),  # one more upsampling layer is added not to miss reconstruction details
-        # )
+        
+        kernel_size = (1, 4) if frequency_indepence else (3, 4)
+        padding = (0, 1) if frequency_indepence else (1, 1)
+        
         self.decoder = nn.Sequential(
-            *[nn.Sequential(ResBlock(d, d), *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)]) for _ in range(n_resnet_blocks)],
+            *[nn.Sequential(ResBlock(d, d, frequency_indepence, dropout=dropout), *[VQVAEDecBlock(d, d, frequency_indepence, dropout=dropout) for _ in range(int(np.log2(downsample_rate)) - 1)]) for _ in range(n_resnet_blocks)],
             # *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
-            nn.ConvTranspose2d(d, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),
-            nn.ConvTranspose2d(num_channels, num_channels, kernel_size=(3, 4), stride=(1, 2), padding=(1, 1)),  # one more upsampling layer is added not to miss reconstruction details
+            nn.ConvTranspose2d(d, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
+            nn.ConvTranspose2d(num_channels, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),  # one more upsampling layer is added not to miss reconstruction details
         )
 
         self.is_upsample_size_updated = False

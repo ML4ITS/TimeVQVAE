@@ -121,7 +121,6 @@ class BidirectionalTransformer(nn.Module):
         codebook_size = codebook_sizes['lf'] if kind == 'LF' else codebook_sizes['hf']
         self.bias = nn.Parameter(torch.zeros(self.num_tokens, codebook_size + 1))
         self.ln = nn.LayerNorm(in_dim, eps=1e-12)
-        self.drop = nn.Dropout(p=0.)
 
         if kind == 'HF':
             # self.projector = nn.Conv1d(num_tokens_l, self.num_tokens, kernel_size=1)
@@ -148,7 +147,7 @@ class BidirectionalTransformer(nn.Module):
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
-        embed = self.drop(self.ln(token_embeddings + position_embeddings))  # (b, n, dim)
+        embed = self.ln(token_embeddings + position_embeddings)  # (b, n, dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
         embed = self.blocks(embed)  # (b, 1+n, dim)
         embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, n, dim)
@@ -168,7 +167,8 @@ class BidirectionalTransformer(nn.Module):
         token_embeddings_h = self.tok_emb_h(embed_ind_h)  # (b m dim)
 
         if self.training:
-            token_embeddings_l = F.dropout(token_embeddings_l, p=0.3)  # to make the HF prediction process more robust during sampling
+            token_embeddings_l = F.dropout(token_embeddings_l, p=0.5)  # to make the HF prediction process more robust during sampling
+            token_embeddings_h = F.dropout(token_embeddings_h, p=0.5)  # to make the HF prediction process more robust during sampling
 
         token_embeddings_l = self.projector(token_embeddings_l, upscale_size=token_embeddings_h.shape[1])  # (b m dim)
         token_embeddings = torch.cat((token_embeddings_l, token_embeddings_h), dim=-1)  # (b m 2*dim)
@@ -177,7 +177,7 @@ class BidirectionalTransformer(nn.Module):
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
-        embed = self.drop(self.ln(token_embeddings + position_embeddings))  # (b, m, 2*dim)
+        embed = self.ln(token_embeddings + position_embeddings)  # (b, m, 2*dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
         embed = self.blocks(embed)  # (b, 1+m, 2*dim)
         embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, m, dim)
