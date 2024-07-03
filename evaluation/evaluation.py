@@ -200,7 +200,7 @@ class Evaluation(nn.Module):
         fig, axes = plt.subplots(2, 1, figsize=(4, 4))
         plt.suptitle(title)
         for i in sample_ind:
-            axes[0].plot(X1[i, 0, :], alpha=0.1)
+            axes[0].plot(X1[i, 0, :], alpha=0.1, color='C0')
         axes[0].set_xticks([])
         axes[0].set_ylim(*ylim)
         # axes[0].set_title('test samples')
@@ -208,7 +208,7 @@ class Evaluation(nn.Module):
         # `X_gen`
         sample_ind = np.random.randint(0, X2.shape[0], n_plot_samples)
         for i in sample_ind:
-            axes[1].plot(X2[i, 0, :], alpha=0.1)
+            axes[1].plot(X2[i, 0, :], alpha=0.1, color='C0')
         axes[1].set_ylim(*ylim)
         # axes[1].set_title('generated samples')
 

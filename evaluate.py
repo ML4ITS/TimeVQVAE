@@ -3,6 +3,7 @@ Stage2: prior learning
 
 run `python stage2.py`
 """
+import argparse
 from argparse import ArgumentParser
 import copy
 
@@ -22,33 +23,41 @@ from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model
 
 
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def load_args():
     parser = ArgumentParser()
     parser.add_argument('--config', type=str, help="Path to the config data  file.",
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
-    parser.add_argument('--use_fidelity_enhancer', default=False, type=bool)
+    parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Enable fidelity enhancer')
     return parser.parse_args()
 
 
 def evaluate(config: dict,
-                 dataset_name: str,
-                 train_data_loader: DataLoader,
-                 gpu_device_idx,
-                 use_fidelity_enhancer,
-                 ):
+             dataset_name: str,
+             train_data_loader: DataLoader,
+             gpu_device_idx,
+             use_fidelity_enhancer,
+             ):
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpMaskGIT(dataset_name, input_length, config, n_classes)
-    config_ = copy.deepcopy(config)
-    config_['dataset']['dataset_name'] = dataset_name
     
     # wandb init
-    wandb.init(config=config_, project='TimeVQVAE-evaluation')
+    wandb.init(project='TimeVQVAE-evaluation', config={**config, 'dataset_name': dataset_name, 'use_fidelity_enhancer': use_fidelity_enhancer})
 
     # test
     print('evaluating...')

@@ -40,9 +40,10 @@ def train_stage3(config: dict,
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
     train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, n_classes)
-    config_ = copy.deepcopy(config)
-    config_['dataset']['dataset_name'] = dataset_name
-    wandb_logger = WandbLogger(project=project_name, name=None, config=config_)
+    
+    n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
+    wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name':dataset_name, 'n_trainable_params':n_trainable_params})
+    
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
@@ -55,10 +56,6 @@ def train_stage3(config: dict,
                 train_dataloaders=train_data_loader,
                 val_dataloaders=test_data_loader
                 )
-
-    # additional log
-    n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
-    wandb.log({'n_trainable_params:': n_trainable_params})
 
     print('saving the model...')
     save_model({'fidelity_enhancer': train_exp.fidelity_enhancer}, id=dataset_name)
