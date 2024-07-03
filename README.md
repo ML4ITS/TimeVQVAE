@@ -48,10 +48,10 @@ python preprocessing/preprocess_ucr.py
 ### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```commandline
-python stage1.py --dataset_names TwoPatterns --gpu_device_idx 0
+python stage1.py --dataset_names FordA --gpu_device_idx 0
 ```
 ```commandline
-python stage2.py --dataset_names TwoPatterns --gpu_device_idx 0
+python stage2.py --dataset_names FordA --gpu_device_idx 0
 ```
 
 :bulb: The training pipeline is as follows:
@@ -65,13 +65,13 @@ python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
 
 :rocket: CAS can be performed with the following command:
 ```commandline
-python run_CAS.py  --dataset_names TwoPatterns --gpu_device_idx 0
+python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
 ```
 
 ### Evaluation
 The following code runs the evaluation step (the same evaluation step as the end of `stage2.py`).
 ```commandline
-python evaluate.py --dataset_names TwoPatterns --gpu_device_idx 0
+python evaluate.py --dataset_names FordA --gpu_device_idx 0
 ```
   
 
@@ -93,7 +93,7 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ### Implementation Modifications
 * [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Small-sized HF transformer is used, shown to be sufficient with 1 layer and dim size of 32; frequency-independent encoder and decoder [4] are used for HF.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Small-sized HF transformer is used, shown to be sufficient with 1 layer and dim size of 32; frequency-independent encoder and decoder [4] are used for HF; n_fft of 4 is used instead of 8.
 
 
 ### Enhanced Sampling Scheme (ESS) [2]
@@ -121,7 +121,7 @@ It acts like a mapping function such that it transforms a generated time series 
 
 To employ this, the stage1 training must've been finished. Then, you can train the fidelity enhancer by running 
 ```commandline
-python stage_fid_enhancer.py  --dataset_names TwoPatterns --gpu_device_idx 0 --use_fidelity_enhancer True
+python stage_fid_enhancer.py  --dataset_names FordA --gpu_device_idx 0 --use_fidelity_enhancer True
 ```
 
 
