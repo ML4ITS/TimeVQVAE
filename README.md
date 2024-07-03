@@ -53,27 +53,25 @@ python stage1.py --dataset_names TwoPatterns --gpu_device_idx 0
 ```commandline
 python stage2.py --dataset_names TwoPatterns --gpu_device_idx 0
 ```
-Note that you need to specify a dataset of your interest in `configs/config.yaml`.
 
 :bulb: The training pipeline is as follows:
 - Run `stage1.py` and it saves trained encoders, decoders, and vector-quantizers for LF and HF.
-- Run `stage2.py` and it saves the prior model (_i.e.,_ bidirectional transformer).
-  - `stage2.py` includes an evaluation step which is performed right after the stage 2 training. The evaluation includes a visualization plot of samples, FID score, and IS (Inception Score).    
+- Run `stage2.py` and it saves the prior model (_i.e.,_ bidirectional transformer); `stage2.py` includes an evaluation step which is performed right after the stage 2 training. The evaluation includes a visualization plot of samples, FID score, and IS (Inception Score).    
 
-:rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
+<!-- :rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
 ```commandline
 python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
-```
+``` -->
 
 :rocket: CAS can be performed with the following command:
 ```commandline
-python run_CAS.py  --dataset_names CBF BME --gpu_device_idx 0
+python run_CAS.py  --dataset_names TwoPatterns --gpu_device_idx 0
 ```
 
 ### Evaluation
 The following code runs the evaluation step (the same evaluation step as the end of `stage2.py`).
 ```commandline
-python evaluate.py --dataset_names CBF --gpu_device_idx 0
+python evaluate.py --dataset_names TwoPatterns --gpu_device_idx 0
 ```
   
 
@@ -114,14 +112,14 @@ The visual results are presented in the following figure:
 You can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`.
 
 
-### Time Series FidelityEnhancer (TS-FidelityEnhancer) [3]
+### Time Series FidelityEnhancer (TS-FidelityEnhancer) [3] (not relased yet)
 We have published a follow-up paper that proposes, _TS-FidelityEnhancer_. 
 It acts like a mapping function such that it transforms a generated time series to be more realistic while retaining the original context.
 <p align="center">
 <img src=".fig/inference_process_tsfe.png" alt="" width=100% height=100%>
 </p>
 
-To employ this, you first need to train the TS-FidelityEnhancer model by running 
+To employ this, the stage1 training must've been finished. Then, you can train the fidelity enhancer by running 
 ```commandline
 python stage_fid_enhancer.py  --dataset_names TwoPatterns --gpu_device_idx 0 --use_fidelity_enhancer True
 ```
