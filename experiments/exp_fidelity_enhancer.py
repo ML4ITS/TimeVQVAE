@@ -162,5 +162,5 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW([{'params': self.parameters(), 'lr': self.config['exp_params']['LR']}], lr=self.config['exp_params']['LR'])
-        T_max = self.config['trainer_params']['max_steps']['stage3']
+        T_max = self.config['trainer_params']['max_steps']['stage_fid_enhancer']
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}

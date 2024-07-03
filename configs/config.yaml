@@ -4,7 +4,7 @@ dataset:
   batch_sizes:
     stage1: 128
     stage2: 256
-    stage3: 128
+    stage_fid_enhancer: 128
   num_workers: 0
 
 exp_params:
@@ -14,11 +14,11 @@ trainer_params:
   max_steps:
     stage1: 5000
     stage2: 50000
-    stage3: 5000
+    stage_fid_enhancer: 5000
   val_check_interval:
     stage1: 500
     stage2: 500
-    stage3: 50
+    stage_fid_enhancer: 50
 
 encoder:
   dim: 128

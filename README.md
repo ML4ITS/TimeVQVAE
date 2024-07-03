@@ -48,10 +48,10 @@ python preprocessing/preprocess_ucr.py
 ### Run
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```commandline
-python stage1.py --dataset_names CBF --gpu_device_idx 0
+python stage1.py --dataset_names TwoPatterns --gpu_device_idx 0
 ```
 ```commandline
-python stage2.py --dataset_names CBF --gpu_device_idx 0
+python stage2.py --dataset_names TwoPatterns --gpu_device_idx 0
 ```
 Note that you need to specify a dataset of your interest in `configs/config.yaml`.
 
@@ -123,9 +123,8 @@ It acts like a mapping function such that it transforms a generated time series 
 
 To employ this, you first need to train the TS-FidelityEnhancer model by running 
 ```commandline
-python stage3.py  --dataset_names CBF BME --gpu_device_idx 0
+python stage_fid_enhancer.py  --dataset_names TwoPatterns --gpu_device_idx 0 --use_fidelity_enhancer True
 ```
-then you can generate new time series by running `python evaluate.py` with `evaluation/use_fidelity_enhancer = True` in `configs/config.yaml`.
 
 
 ### TimeVQVAE for Anomaly Detection (TimeVQVAE-AD) [4]

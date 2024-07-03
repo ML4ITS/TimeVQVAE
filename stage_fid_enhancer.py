@@ -28,13 +28,13 @@ def load_args():
     return parser.parse_args()
 
 
-def train_stage3(config: dict,
+def train_stage_fid_enhancer(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
                  gpu_device_idx,
                  ):
-    project_name = 'TimeVQVAE-stage3'
+    project_name = 'TimeVQVAE-stage_fid_enhancer'
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
@@ -47,10 +47,10 @@ def train_stage3(config: dict,
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='epoch')],
-                         max_steps=config['trainer_params']['max_steps']['stage3'],
+                         max_steps=config['trainer_params']['max_steps']['stage_fid_enhancer'],
                          devices=[gpu_device_idx,],
                          accelerator='gpu',
-                         val_check_interval=config['trainer_params']['val_check_interval']['stage3'],
+                         val_check_interval=config['trainer_params']['val_check_interval']['stage_fid_enhancer'],
                          check_val_every_n_epoch=None)
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
@@ -107,9 +107,9 @@ if __name__ == '__main__':
 
         # data pipeline
         dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
-        batch_size = config['dataset']['batch_sizes']['stage3']
+        batch_size = config['dataset']['batch_sizes']['stage_fid_enhancer']
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage3(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx)
+        train_stage_fid_enhancer(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx)
         torch.cuda.empty_cache()
