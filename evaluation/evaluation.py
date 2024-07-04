@@ -25,6 +25,7 @@ from supervised_FCN.example_compute_FID import calculate_fid
 from supervised_FCN.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
 from generators.fidelity_enhancer import FidelityEnhancer
+from evaluation.rocket_functions import generate_kernels, apply_kernels
 
 
 class Evaluation(nn.Module):
@@ -35,16 +36,29 @@ class Evaluation(nn.Module):
     - PCA
     - t-SNE
     """
-    def __init__(self, subset_dataset_name: str, input_length:int, n_classes:int, gpu_device_index: int, config: dict, use_fidelity_enhancer:bool=False):
+    def __init__(self, 
+                 subset_dataset_name: str, 
+                 input_length:int, 
+                 n_classes:int, 
+                 gpu_device_index:int, 
+                 config:dict, 
+                 use_fidelity_enhancer:bool=False,
+                 feature_extractor_type:str='supervised_fcn'
+                 ):
         super().__init__()
         self.subset_dataset_name = dataset_name = subset_dataset_name
         self.device = torch.device(gpu_device_index)
         self.config = config
         self.batch_size = self.config['evaluation']['batch_size']
+        self.feature_extractor_type = feature_extractor_type
+        assert feature_extractor_type in ['supervised_fcn', 'rocket'], 'unavailable feature extractor type.'
 
         # load the pretrained FCN
         self.fcn = load_pretrained_FCN(subset_dataset_name)
         self.fcn.eval()
+
+        # load rocket (to extract unbiased representations)
+        self.rocket_kernels = generate_kernels(input_length, num_kernels=1000)
 
         # load the numpy matrix of the test samples
         dataset_importer = DatasetImporterUCR(subset_dataset_name, data_scaling=True)
@@ -97,28 +111,20 @@ class Evaluation(nn.Module):
 
         return x_new_l, x_new_h, x_new
 
-    def compute_z_train_test(self, kind: str):
-        assert kind in ['train', 'test']
-        if kind == 'train':
-            self.X = self.X_train
-        elif kind == 'test':
-            self.X = self.X_test
+    def _extract_feature_representations(self, x:np.ndarray):
+        """
+        x: (b 1 l)
+        """
+        if self.feature_extractor_type == 'supervised_fcn':
+            z = self.fcn(torch.from_numpy(x).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()  # (b d)
+        elif self.feature_extractor_type == 'rocket':
+            x = x[:,0,:]  # (b l)
+            z = apply_kernels(x, self.rocket_kernels)
+        else:
+            raise ValueError
+        return z
 
-        n_samples = self.X.shape[0]
-        n_iters = n_samples // self.batch_size
-        if n_samples % self.batch_size > 0:
-            n_iters += 1
-
-        # get feature vectors
-        zs = []
-        for i in range(n_iters):
-            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            z = self.fcn(torch.from_numpy(self.X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
-            zs.append(z)
-        zs = np.concatenate(zs, axis=0)
-        return zs
-
-    def compute_z(self, kind: str) -> (np.ndarray, np.ndarray):
+    def compute_z(self, kind: str) -> np.ndarray:
         """
         It computes representation z given input x
         :param X_gen: generated X
@@ -126,9 +132,9 @@ class Evaluation(nn.Module):
         """
         assert kind in ['train', 'test']
         if kind == 'train':
-            X = self.X_train
+            X = self.X_train  # (b 1 l)
         elif kind == 'test':
-            X = self.X_test
+            X = self.X_test  # (b 1 l)
         else:
             raise ValueError
 
@@ -141,12 +147,13 @@ class Evaluation(nn.Module):
         z_test = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            z_t = self.fcn(torch.from_numpy(X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            # z_t = self.fcn(torch.from_numpy(X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            z_t = self._extract_feature_representations(X[s])
             z_test.append(z_t)
         z_test = np.concatenate(z_test, axis=0)
         return z_test
 
-    def compute_z_gen(self, X_gen: torch.Tensor) -> (np.ndarray, np.ndarray):
+    def compute_z_gen(self, X_gen: torch.Tensor) -> np.ndarray:
         """
         It computes representation z given input x
         :param X_gen: generated X
@@ -162,13 +169,14 @@ class Evaluation(nn.Module):
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
 
-            z_g = self.fcn(X_gen[s].float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            # z_g = self.fcn(X_gen[s].float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
+            z_g = self._extract_feature_representations(X_gen[s].numpy().astype(float))
 
             z_gen.append(z_g)
         z_gen = np.concatenate(z_gen, axis=0)
         return z_gen
 
-    def fid_score(self, z_test: np.ndarray, z_gen: np.ndarray) -> (int, (np.ndarray, np.ndarray)):
+    def fid_score(self, z_test: np.ndarray, z_gen: np.ndarray) -> int:
         fid = calculate_fid(z_test, z_gen)
         return fid
 

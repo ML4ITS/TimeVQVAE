@@ -2,7 +2,7 @@ dataset:
   in_channels: 1
   data_scaling: True
   batch_sizes:
-    stage1: 128
+    stage1: 64 #128
     stage2: 256
     stage_fid_enhancer: 128
   num_workers: 0
@@ -40,7 +40,7 @@ VQ-VAE:
   decay: 0.8
   commitment_weight: 1.
   codebook_dim: 128
-  kmeans_init: True
+  kmeans_init: False
   emb_dropout: 0.
   perceptual_loss_weight: 0
 

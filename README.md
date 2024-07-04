@@ -93,7 +93,8 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ### Implementation Modifications
 * [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Small-sized HF transformer is used, shown to be sufficient with 1 layer and dim size of 32; frequency-independent encoder and decoder [4] are used for HF; n_fft of 4 is used instead of 8.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Small-sized HF transformer is used, shown to be sufficient with 1 layer and dim size of 32; n_fft of 4 is used instead of 8.
+* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`.
 
 
 ### Enhanced Sampling Scheme (ESS) [2]
