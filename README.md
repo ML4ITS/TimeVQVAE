@@ -133,6 +133,7 @@ With that principal, we have developed TimeVQVAE-AD.
 It not only achieves a state-of-the-art anomaly detection accuracy on [the UCR Anomaly archive](https://paperswithcode.com/dataset/ucr-anomaly-archive),
 but also provides a high level of explainability, covering counterfactual sampling (_i.e.,_ to answer the following question, "how is the time series supposed look if there was no anomaly?").
 If AD is your interest, please check out the paper.
+Its open-source code is available [here](https://github.com/ML4ITS/TimeVQVAE-AnomalyDetection). 
 
 
 
