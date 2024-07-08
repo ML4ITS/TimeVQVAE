@@ -5,7 +5,8 @@ run `python stage2.py`
 """
 import argparse
 from argparse import ArgumentParser
-import copy
+from typing import Union
+import random
 
 import torch
 import wandb
@@ -51,10 +52,16 @@ def evaluate(config: dict,
              gpu_device_idx,
              use_fidelity_enhancer:str,
              feature_extractor_type:str,
+             rand_seed:Union[int,None]=None,
              ):
     """
     :param do_validate: if True, validation is conducted during training with a test dataset.
     """
+    if not isinstance(rand_seed, type(None)):
+        np.random.seed(rand_seed)
+        torch.manual_seed(rand_seed)
+        random.seed(rand_seed)
+
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
     
@@ -69,8 +76,12 @@ def evaluate(config: dict,
                             feature_extractor_type=feature_extractor_type).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
-    z_train = evaluation.compute_z('train')
-    z_test = evaluation.compute_z('test')
+    z_train = evaluation.z_train
+    z_test = evaluation.z_test
+    z_rec_train = evaluation.compute_z_rec('train')
+    z_rec_test = evaluation.compute_z_rec('test')
+    z_svq_train = evaluation.compute_z_svq('train')
+    z_svq_test = evaluation.compute_z_svq('test')
     z_gen = evaluation.compute_z_gen(x_gen)
 
     IS_mean, IS_std = evaluation.inception_score(x_gen)
@@ -87,6 +98,12 @@ def evaluate(config: dict,
     evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
     evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
     evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
+
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_rec_train, ['z_train', 'z_rec_train'])
+    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_rec_test, ['z_test', 'z_rec_test'])
+
+    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_svq_train, ['z_train', 'z_svq_train'])
+    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_svq_test, ['z_test', 'z_svq_test'])
 
     wandb.finish()
 

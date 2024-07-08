@@ -26,6 +26,7 @@ from supervised_FCN.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
 from generators.fidelity_enhancer import FidelityEnhancer
 from evaluation.rocket_functions import generate_kernels, apply_kernels
+from utils import zero_pad_low_freq, zero_pad_high_freq
 
 
 class Evaluation(nn.Module):
@@ -54,7 +55,7 @@ class Evaluation(nn.Module):
         assert feature_extractor_type in ['supervised_fcn', 'rocket'], 'unavailable feature extractor type.'
 
         # load the pretrained FCN
-        self.fcn = load_pretrained_FCN(subset_dataset_name)
+        self.fcn = load_pretrained_FCN(subset_dataset_name).to(gpu_device_index)
         self.fcn.eval()
 
         # load rocket (to extract unbiased representations)
@@ -76,8 +77,9 @@ class Evaluation(nn.Module):
                                                       map_location='cpu')
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit
+        self.stage1 = self.stage2.maskgit.stage1
 
-        # load domain shifter
+        # load the fidelity enhancer
         if use_fidelity_enhancer:
             self.fidelity_enhancer = FidelityEnhancer(self.ts_len, 1, config)
             fname = f'fidelity_enhancer-{dataset_name}.ckpt'
@@ -85,6 +87,12 @@ class Evaluation(nn.Module):
             self.fidelity_enhancer.load_state_dict(torch.load(ckpt_fname))
         else:
             self.fidelity_enhancer = nn.Identity()
+
+        # fit PCA on a training set
+        self.pca = PCA(n_components=2, random_state=0)
+        self.z_train = self.compute_z('train')
+        self.z_test = self.compute_z('test')
+        self.pca.fit(self.z_train)
 
     def sample(self, n_samples: int, kind: str, class_index: int = -1):
         assert kind in ['unconditional', 'conditional']
@@ -124,6 +132,75 @@ class Evaluation(nn.Module):
             raise ValueError
         return z
 
+    def compute_z_rec(self, kind:str):
+        """
+        compute representations of X_rec
+        """
+        assert kind in ['train', 'test']
+        if kind == 'train':
+            X = self.X_train  # (b 1 l)
+        elif kind == 'test':
+            X = self.X_test  # (b 1 l)
+        else:
+            raise ValueError
+        
+        n_samples = X.shape[0]
+        n_iters = n_samples // self.batch_size
+        if n_samples % self.batch_size > 0:
+            n_iters += 1
+
+        # get feature vectors from `X_test`
+        zs = []
+        for i in range(n_iters):
+            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
+            x = X[s]  # (b 1 l)
+            x = torch.from_numpy(x).float().to(self.device)
+            x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
+            z_t = self._extract_feature_representations(x_rec)
+            zs.append(z_t)
+        zs = np.concatenate(zs, axis=0)
+        return zs
+
+    @torch.no_grad()
+    def compute_z_svq(self, kind:str):
+        """
+        compute representations of X', a stochastic variant of X with SVQ
+        """
+        assert kind in ['train', 'test']
+        if kind == 'train':
+            X = self.X_train  # (b 1 l)
+        elif kind == 'test':
+            X = self.X_test  # (b 1 l)
+        else:
+            raise ValueError
+        
+        n_samples = X.shape[0]
+        n_iters = n_samples // self.batch_size
+        if n_samples % self.batch_size > 0:
+            n_iters += 1
+
+        # get feature vectors from `X_test`
+        zs = []
+        for i in range(n_iters):
+            s = slice(i * self.batch_size, (i + 1) * self.batch_size)
+            x = X[s]  # (b 1 l)
+            x = torch.from_numpy(x).float().to(self.device)
+            
+            # x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
+            svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
+            svq_temp = np.random.uniform(*svq_temp_rng)
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, zero_pad_high_freq, svq_temp=svq_temp)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, zero_pad_low_freq, svq_temp=svq_temp)  # (b m)
+            x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
+            x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
+            x_a = x_a_l + x_a_h  # (b c l)
+            x_a = x_a.cpu().numpy().astype(float)
+
+            z_t = self._extract_feature_representations(x_a)
+            zs.append(z_t)
+        zs = np.concatenate(zs, axis=0)
+        return zs
+    
     def compute_z(self, kind: str) -> np.ndarray:
         """
         It computes representation z given input x
@@ -144,14 +221,13 @@ class Evaluation(nn.Module):
             n_iters += 1
 
         # get feature vectors from `X_test`
-        z_test = []
+        zs = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            # z_t = self.fcn(torch.from_numpy(X[s]).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()
             z_t = self._extract_feature_representations(X[s])
-            z_test.append(z_t)
-        z_test = np.concatenate(z_test, axis=0)
-        return z_test
+            zs.append(z_t)
+        zs = np.concatenate(zs, axis=0)
+        return zs
 
     def compute_z_gen(self, X_gen: torch.Tensor) -> np.ndarray:
         """
@@ -249,9 +325,9 @@ class Evaluation(nn.Module):
         # plt.close()
 
         # PCA: latent space
-        pca = PCA(n_components=2)
-        Z1_embed = pca.fit_transform(Z1[ind1])
-        Z2_embed = pca.transform(Z2[ind2])
+        # pca = PCA(n_components=2, random_state=0)
+        Z1_embed = self.pca.transform(Z1[ind1])
+        Z2_embed = self.pca.transform(Z2[ind2])
 
         plt.figure(figsize=(4, 4))
         # plt.title("PCA in the representation space by the trained encoder");
@@ -283,23 +359,23 @@ class Evaluation(nn.Module):
         wandb.log({"visual inspection (X_train vs X_test)": wandb.Image(plt)})
         plt.close()
 
-    def log_pca_ztrain_ztest(self, n_plot_samples: int, z1: np.ndarray, z2: np.ndarray):
-        sample_ind1 = np.random.choice(range(z1.shape[0]), size=n_plot_samples, replace=True)
-        sample_ind2 = np.random.choice(range(z2.shape[0]), size=n_plot_samples, replace=True)
+    # def log_pca_ztrain_ztest(self, n_plot_samples: int, z1: np.ndarray, z2: np.ndarray):
+    #     sample_ind1 = np.random.choice(range(z1.shape[0]), size=n_plot_samples, replace=True)
+    #     sample_ind2 = np.random.choice(range(z2.shape[0]), size=n_plot_samples, replace=True)
 
-        # PCA: latent space
-        pca = PCA(n_components=2)
-        z_embedded1 = pca.fit_transform(z1[sample_ind1].squeeze())
-        z_embedded2 = pca.transform(z2[sample_ind2].squeeze())
+    #     # PCA: latent space
+    #     pca = PCA(n_components=2)
+    #     z_embedded1 = pca.fit_transform(z1[sample_ind1].squeeze())
+    #     z_embedded2 = pca.transform(z2[sample_ind2].squeeze())
 
-        plt.figure(figsize=(4, 4))
-        # plt.title("PCA in the representation space by the trained encoder");
-        plt.scatter(z_embedded1[:, 0], z_embedded1[:, 1], alpha=0.1, label='train')
-        plt.scatter(z_embedded2[:, 0], z_embedded2[:, 1], alpha=0.1, label='test')
-        plt.legend()
-        plt.tight_layout()
-        wandb.log({"PCA-latent_space (z_train vs z_test)": wandb.Image(plt)})
-        plt.close()
+    #     plt.figure(figsize=(4, 4))
+    #     # plt.title("PCA in the representation space by the trained encoder");
+    #     plt.scatter(z_embedded1[:, 0], z_embedded1[:, 1], alpha=0.1, label='train')
+    #     plt.scatter(z_embedded2[:, 0], z_embedded2[:, 1], alpha=0.1, label='test')
+    #     plt.legend()
+    #     plt.tight_layout()
+    #     wandb.log({"PCA-latent_space (z_train vs z_test)": wandb.Image(plt)})
+    #     plt.close()
 
     def log_tsne(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
         X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)

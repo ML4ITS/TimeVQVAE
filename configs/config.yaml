@@ -75,7 +75,7 @@ class_guidance:
 fidelity_enhancer:
   svq_temp_rng:
     - 1.
-    - 2.
+    - 4.
   dim: 8
   dim_mults:
     - 1

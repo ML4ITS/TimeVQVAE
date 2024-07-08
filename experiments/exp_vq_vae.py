@@ -49,7 +49,7 @@ class ExpVQVAE(pl.LightningModule):
             self.fcn.eval()
             freeze(self.fcn)
 
-    def forward(self, batch, batch_idx):
+    def forward(self, batch, batch_idx, return_x_rec:bool=False):
         """
         :param x: input time series (B, C, L)
         """
@@ -77,11 +77,6 @@ class ExpVQVAE(pl.LightningModule):
         uhat_l = zero_pad_high_freq(xfhat_l)
         xhat_l = timefreq_to_time(uhat_l, self.n_fft, C)  # (B, C, L)
 
-        recons_loss['LF.time'] = F.mse_loss(x_l, xhat_l)
-        recons_loss['LF.timefreq'] = F.mse_loss(u_l, uhat_l)
-        perplexities['LF'] = perplexity_l
-        vq_losses['LF'] = vq_loss_l
-
         # forward: high-freq
         u_h = zero_pad_low_freq(xf)  # (B, C, H, W)
         x_h = timefreq_to_time(u_h, self.n_fft, C)  # (B, C, L)
@@ -91,6 +86,15 @@ class ExpVQVAE(pl.LightningModule):
         xfhat_h = self.decoder_h(z_q_h)
         uhat_h = zero_pad_low_freq(xfhat_h)
         xhat_h = timefreq_to_time(uhat_h, self.n_fft, C)  # (B, C, L)
+
+        if return_x_rec:
+            x_rec = xhat_l + xhat_h  # (b c l)
+            return x_rec  # (b c l)
+
+        recons_loss['LF.time'] = F.mse_loss(x_l, xhat_l)
+        recons_loss['LF.timefreq'] = F.mse_loss(u_l, uhat_l)
+        perplexities['LF'] = perplexity_l
+        vq_losses['LF'] = vq_loss_l
 
         recons_loss['HF.time'] = F.l1_loss(x_h, xhat_h)
         recons_loss['HF.timefreq'] = F.mse_loss(u_h, uhat_h)
