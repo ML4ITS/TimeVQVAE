@@ -1,13 +1,18 @@
+import os
+
 import matplotlib.pyplot as plt
-import torch.nn
+import torch
+import torch.nn as nn
 from torch.optim.lr_scheduler import CosineAnnealingLR
 import wandb
 import numpy as np
 import torch.nn.functional as F
 import pytorch_lightning as pl
 
-from generators.maskgit import MaskGIT
 from evaluation.metrics import Metrics
+from generators.maskgit import MaskGIT
+from generators.fidelity_enhancer import FidelityEnhancer
+from utils import freeze
 
 
 class ExpMaskGIT(pl.LightningModule):
@@ -15,13 +20,28 @@ class ExpMaskGIT(pl.LightningModule):
                  dataset_name: str,
                  input_length: int,
                  config: dict,
-                 n_classes: int):
+                 n_classes: int,
+                 use_fidelity_enhancer:bool=False,
+                 feature_extractor_type:str='rocket'
+                 ):
         super().__init__()
         self.config = config
+        self.use_fidelity_enhancer = use_fidelity_enhancer
         self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
-        
-        metric_batch_size = 32
-        self.metrics = Metrics(dataset_name, metric_batch_size)
+
+        self.metrics = Metrics(dataset_name, feature_extractor_type)
+
+        # load the fidelity enhancer
+        if self.use_fidelity_enhancer:
+            self.fidelity_enhancer = FidelityEnhancer(input_length, config['dataset']['in_channels'], config)
+            fname = f'fidelity_enhancer-{dataset_name}.ckpt'
+            ckpt_fname = os.path.join('saved_models', fname)
+            if not os.path.isfile(ckpt_fname):
+                assert False, "There's no pretrained model checkpoint for the fidelity enhancer. Run `python stage_fid_enhancer.py` first."
+            self.fidelity_enhancer.load_state_dict(torch.load(ckpt_fname))
+            freeze(self.fidelity_enhancer)
+        else:
+            self.fidelity_enhancer = nn.Identity()
 
     def forward(self, x):
         """
@@ -72,32 +92,40 @@ class ExpMaskGIT(pl.LightningModule):
             class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
 
             # unconditional sampling
-            s_l, s_h = self.maskgit.iterative_decoding(num=64, device=x.device, class_index=class_index)
+            s_l, s_h = self.maskgit.iterative_decoding(num=1024, device=x.device, class_index=class_index)
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
 
             # plot: generated sample
-            fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
+            fig, axes = plt.subplots(4, 1, figsize=(4, 2*3))
+            fig.suptitle(f'Epoch {self.current_epoch}; Class Index: {class_index}')
+            axes = axes.flatten()
             b = 0
+            axes[0].set_xlabel('xhat_l')
             axes[0].plot(x_new_l[b,0,:])
+            axes[1].set_xlabel('xhat_h')
             axes[1].plot(x_new_h[b, 0, :])
+            axes[2].set_xlabel('xhat')
             axes[2].plot(x_new[b, 0, :])
-            axes[0].set_ylim(-4, 4)
-            axes[1].set_ylim(-4, 4)
-            axes[2].set_ylim(-4, 4)
-            plt.title(f'ep_{self.current_epoch}; class-{class_index}')
-            plt.tight_layout()
-            self.logger.log_image(key='prior_model sample', images=[wandb.Image(plt),])
-            plt.close()
 
             # compute metrics
             x_new = x_new.numpy()
             fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
-            incept_score, _ = self.metrics.inception_score(x_new)
-            self.log('metrics/fid_train_gen', fid_train_gen)
-            self.log('metrics/fid_test_gen', fid_test_gen)
-            self.log('metrics/incept_score', incept_score)
+            self.log('metrics/FID', fid_test_gen)
+
+            if self.use_fidelity_enhancer:
+                x_new_fe = self.fidelity_enhancer(torch.from_numpy(x_new).to(self.device)).cpu().numpy()
+                fid_train_gen_fe, fid_test_gen_fe = self.metrics.fid_score(x_new_fe)
+                self.log('metrics/FID_with_FE', fid_test_gen_fe)
+                axes[3].set_xlabel('FE(xhat)')
+                axes[3].plot(x_new_fe[b,0,:])
+
+            for ax in axes:
+                ax.set_ylim(-4, 4)
+            plt.tight_layout()
+            self.logger.log_image(key='prior_model sample', images=[wandb.Image(plt),])
+            plt.close()
 
         return loss_hist
 

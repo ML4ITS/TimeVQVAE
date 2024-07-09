@@ -31,12 +31,17 @@ pip install -r requirements.txt
 ```
 
 
-## Dataset Download
-The UCR archive datasets are automatically downloaded if you run any of the training command below such as `$ python stage1.py`.
-If you just want to download the datasets only without running the training, run
+## Dataset and Dataset Download
+The UCR archive datasets are automatically downloaded if you run any of the training command below such as `python stage1.py`. If you just want to download the datasets only without running the training, run
 ```commandline
 python preprocessing/preprocess_ucr.py
 ```
+
+[update note on July 8, 2024] We now use a larger training set by using the following re-arranged dataset: We reorganized the original datasets from the UCR archive by 1) merging the existing training and test sets, 2) resplitting it using StratifiedShuffleSplit (from sklearn) into 80% and 20% for a training set and test set, respectively.
+We did so becaused the original datasets have two primary issues to be used to train a time series generative model. Firstly, a majority of the datasets have a larger test set compared to a training set. Secondly, there is clear difference in patterns between training and test sets for some of the datasets. The data format remains the same.
+* original datasets: https://figshare.com/articles/dataset/UCR_Archive_2018/21359775
+* re-organized datasets: https://figshare.com/articles/dataset/UCR_Archive_2018_resplit_ver_/26206355
+* NB! the dataset directory should be located in `TimeVQVAE/datasets`. For instance, `TimeVQVAE/datasets/UCRArchive_2018` or `TimeVQVAE/datasets/UCRArchive_2018_resplit`.
 
 
 ## Usage
@@ -71,9 +76,14 @@ python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
 ### Evaluation
 The following code runs the evaluation step (the same evaluation step as the end of `stage2.py`).
 ```commandline
-python evaluate.py --dataset_names FordA --gpu_device_idx 0
+python evaluate.py --dataset_names FordA --gpu_device_idx 0 -feature_extractor_type supervised_fcn
 ```
-  
+
+We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. You can use the ROCKET representations for the PCA visualization and FID calculation by running
+```commandline
+python evaluate.py --dataset_names FordA --gpu_device_idx 0 --feature_extractor_type rocket
+```
+
 
 ## Google Colab
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ML4ITS/TimeVQVAE/blob/main/.google_colab/TimeVQVAE%20(generation%20only).ipynb) (NB! make sure to change your notebook setting to GPU.)
@@ -83,7 +93,7 @@ The usage is simple:
 1. **User Settings**: specify `dataset_name` and `n_samples_to_generate`.
 2. **Sampling**: Run the unconditional sampling and class-conditional sampling.
 
-Note that the pretrained models are automatically downloaded within the notebook. In case you're interested, the pretrained models are stored in [here](https://figshare.com/articles/software/Pretrained_models_of_TimeVQVAE/22048034).
+<!-- Note that the pretrained models are automatically downloaded within the notebook. In case you're interested, the pretrained models are stored in [here](https://figshare.com/articles/software/Pretrained_models_of_TimeVQVAE/22048034). -->
 
 ## Remarks
 * The full result tables for FID, IS, and CAS are available in `results/`.
@@ -93,8 +103,9 @@ Note that the pretrained models are automatically downloaded within the notebook
 
 ### Implementation Modifications
 * [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Small-sized HF transformer is used, shown to be sufficient with 1 layer and dim size of 32; n_fft of 4 is used instead of 8.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
 * [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`.
+* [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
 
 
 ### Enhanced Sampling Scheme (ESS) [2]
@@ -167,5 +178,17 @@ Its open-source code is available [here](https://github.com/ML4ITS/TimeVQVAE-Ano
   author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
   journal={arXiv preprint arXiv:2311.12550},
   year={2023}
+}
+
+[5]
+@article{dempster2020rocket,
+  title={ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels},
+  author={Dempster, Angus and Petitjean, Fran{\c{c}}ois and Webb, Geoffrey I},
+  journal={Data Mining and Knowledge Discovery},
+  volume={34},
+  number={5},
+  pages={1454--1495},
+  year={2020},
+  publisher={Springer}
 }
 ```

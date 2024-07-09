@@ -9,7 +9,7 @@ import pytorch_lightning as pl
 from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from experiments.exp_base import ExpBase, detach_the_unnecessary
 from vector_quantization import VectorQuantize
-from supervised_FCN.example_pretrained_model_loading import load_pretrained_FCN
+from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from utils import compute_downsample_rate, freeze, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize
 
 

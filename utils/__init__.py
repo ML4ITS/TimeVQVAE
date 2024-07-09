@@ -15,6 +15,7 @@ import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 import requests
 import tarfile
+import zipfile
 
 
 def get_root_dir():
@@ -218,7 +219,7 @@ def time_to_timefreq(x, n_fft: int, C: int):
     x: (B, C, L)
     """
     x = rearrange(x, 'b c l -> (b c) l')
-    x = torch.stft(x, n_fft, normalized=True, return_complex=True)
+    x = torch.stft(x, n_fft, normalized=True, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = torch.view_as_real(x)  # (B, N, T, 2); 2: (real, imag)
     x = rearrange(x, '(b c) n t z -> b (c z) n t ', c=C)  # z=2 (real, imag)
     return x  # (B, C, H, W)
@@ -226,8 +227,9 @@ def time_to_timefreq(x, n_fft: int, C: int):
 
 def timefreq_to_time(x, n_fft: int, C: int):
     x = rearrange(x, 'b (c z) n t -> (b c) n t z', c=C).contiguous()
+    x = x.contiguous()
     x = torch.view_as_complex(x)
-    x = torch.istft(x, n_fft, normalized=True, return_complex=False)
+    x = torch.istft(x, n_fft, normalized=True, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = rearrange(x, '(b c) l -> b c l', c=C)
     return x
 
@@ -309,7 +311,10 @@ def compute_downsample_rate(input_length: int,
     return round(input_length / (np.log2(n_fft) - 1) / downsampled_width) if input_length >= downsampled_width else 1
 
 
-def download_ucr_datasets(url='https://figshare.com/ndownloader/files/37909926', chunk_size=128, zip_fname='UCR_archive.zip'):
+def download_ucr_datasets_old(url='https://figshare.com/ndownloader/files/37909926', chunk_size=128, zip_fname='UCR_archive.zip'):
+    """
+    download the original datasets of the UCR archive
+    """
     dirname = str(get_root_dir().joinpath("datasets"))
     if os.path.isdir(os.path.join(dirname, 'UCRArchive_2018')):
         return None
@@ -337,6 +342,37 @@ def download_ucr_datasets(url='https://figshare.com/ndownloader/files/37909926',
     else:
         pass
 
+def download_ucr_datasets(url='https://figshare.com/ndownloader/files/47494442', chunk_size=128, zip_fname='UCR_archive.zip'):
+    """
+    download the re-organized datasets of the UCR archive for time series generation
+    """
+    dirname = str(get_root_dir().joinpath("datasets", 'UCRArchive_2018_resplit'))
+    fname = os.path.join(dirname, zip_fname)
+
+    if os.path.isdir(dirname) and len(os.listdir(dirname)) > 1:
+        return None
+    
+    if not os.path.isdir(dirname) or not os.path.isfile(fname):
+        if not os.path.isdir(dirname):
+            os.mkdir(dirname)
+
+        # download
+        r = requests.get(url, stream=True)
+        print('downloading the UCR archive datasets...\n')
+        
+        with open(fname, 'wb') as fd:
+            for chunk in r.iter_content(chunk_size=chunk_size):
+                fd.write(chunk)
+
+        # unzip
+        with zipfile.ZipFile(fname, 'r') as zz:
+            zz.extractall(path=dirname)
+    elif os.path.isfile(fname):
+        # unzip
+        with zipfile.ZipFile(fname, 'r') as zz:
+            zz.extractall(path=dirname)
+    else:
+        pass
 
 def get_target_ucr_dataset_names(args, ):
     if args.dataset_names:

@@ -133,3 +133,5 @@ dmypy.json
 datasets/UCRArchive_2018
 wandb/
 saved_models/
+datasets/UCRArchive_2018_resplit
+dataset_split.ipynb

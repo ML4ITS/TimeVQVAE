@@ -6,6 +6,7 @@ run `python stage2.py`
 import os
 import copy
 from argparse import ArgumentParser
+import argparse
 
 import torch
 import wandb
@@ -22,12 +23,24 @@ from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model
 
 
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
 def load_args():
     parser = ArgumentParser()
     parser.add_argument('--config', type=str, help="Path to the config data  file.",
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
+    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
+    parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Enable fidelity enhancer')
     return parser.parse_args()
 
 
@@ -36,17 +49,15 @@ def train_stage2(config: dict,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
                  gpu_device_idx,
-                 do_validate: bool,
+                 use_fidelity_enhancer:bool,
+                 feature_extractor_type:str,
                  ):
-    """
-    :param do_validate: if True, validation is conducted during training with a test dataset.
-    """
     project_name = 'TimeVQVAE-stage2'
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpMaskGIT(dataset_name, input_length, config, n_classes)
+    train_exp = ExpMaskGIT(dataset_name, input_length, config, n_classes, use_fidelity_enhancer, feature_extractor_type)
     
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params})
@@ -62,7 +73,7 @@ def train_stage2(config: dict,
                          )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
-                val_dataloaders=test_data_loader if do_validate else None
+                val_dataloaders=test_data_loader
                 )
 
     print('saving the model...')
@@ -73,8 +84,8 @@ def train_stage2(config: dict,
     # test
     print('evaluating...')
     evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, 
-                            use_fidelity_enhancer=False,
-                            feature_extractor_type='supervised_fcn').to(gpu_device_idx)
+                            use_fidelity_enhancer=use_fidelity_enhancer,
+                            feature_extractor_type=feature_extractor_type).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.z_train
@@ -119,4 +130,4 @@ if __name__ == '__main__':
         train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, do_validate=True)
+        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type)

@@ -42,7 +42,7 @@ def load_args():
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
     parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Enable fidelity enhancer')
-    parser.add_argument('--feature_extractor_type', type=str, default='supervised_fcn', help='supervised_fcn | rocket')
+    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
     return parser.parse_args()
 
 

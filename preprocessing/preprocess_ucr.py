@@ -24,7 +24,8 @@ class DatasetImporterUCR(object):
         :param data_scaling
         """
         download_ucr_datasets()
-        self.data_root = get_root_dir().joinpath("datasets", "UCRArchive_2018", dataset_name)
+        # self.data_root = get_root_dir().joinpath("datasets", "UCRArchive_2018", dataset_name)
+        self.data_root = get_root_dir().joinpath("datasets", "UCRArchive_2018_resplit", dataset_name)
 
         # fetch an entire dataset
         df_train = pd.read_csv(self.data_root.joinpath(f"{dataset_name}_TRAIN.tsv"), sep='\t', header=None)

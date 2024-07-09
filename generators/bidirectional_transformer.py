@@ -57,8 +57,8 @@ class BidirectionalTransformer(nn.Module):
                  pretrained_tok_emb_l: nn.Parameter = None,
                  pretrained_tok_emb_h: nn.Parameter = None,
                  freeze_pretrained_tokens: bool = False,
-                 num_tokens_l: int = None,
-                 dropout:float=0.3,
+                 model_dropout:float=0.3,
+                 emb_dropout:float=0.3,
                  **kwargs):
         """
         :param kind:
@@ -86,6 +86,7 @@ class BidirectionalTransformer(nn.Module):
         self.p_unconditional = p_unconditional
         in_dim = embed_dim if kind == 'LF' else 2 * embed_dim
         out_dim = embed_dim
+        self.emb_dropout = emb_dropout
 
         # token embeddings
         self.tok_emb_l = nn.Embedding(codebook_sizes['lf'] + 1, embed_dim)  # `+1` is for mask-token
@@ -109,9 +110,9 @@ class BidirectionalTransformer(nn.Module):
                                                        heads=heads,
                                                        use_rmsnorm=use_rmsnorm,
                                                        ff_mult=ff_mult,
-                                                       layer_dropout=dropout,
-                                                       attn_dropout=dropout, 
-                                                       ff_dropout=dropout,
+                                                       layer_dropout=model_dropout,
+                                                       attn_dropout=model_dropout, 
+                                                       ff_dropout=model_dropout,
                                                    ))
         self.Token_Prediction = nn.Sequential(*[
             nn.Linear(in_features=in_dim, out_features=out_dim),
@@ -143,6 +144,8 @@ class BidirectionalTransformer(nn.Module):
         device = embed_ind_l.device
 
         token_embeddings = self.tok_emb_l(embed_ind_l)  # (b n dim)
+        if self.training:
+            token_embeddings = F.dropout(token_embeddings, p=self.emb_dropout)  # to make the LF prediction process more robust during sampling
         cls_emb = self.class_embedding(class_condition, embed_ind_l.shape[0], device)  # (b 1 dim)
 
         n = token_embeddings.shape[1]
@@ -167,8 +170,8 @@ class BidirectionalTransformer(nn.Module):
         token_embeddings_h = self.tok_emb_h(embed_ind_h)  # (b m dim)
 
         if self.training:
-            token_embeddings_l = F.dropout(token_embeddings_l, p=0.5)  # to make the HF prediction process more robust during sampling
-            token_embeddings_h = F.dropout(token_embeddings_h, p=0.5)  # to make the HF prediction process more robust during sampling
+            token_embeddings_l = F.dropout(token_embeddings_l, p=self.emb_dropout)  # to make the HF prediction process more robust during sampling
+            token_embeddings_h = F.dropout(token_embeddings_h, p=self.emb_dropout)  # to make the HF prediction process more robust during sampling
 
         token_embeddings_l = self.projector(token_embeddings_l, upscale_size=token_embeddings_h.shape[1])  # (b m dim)
         token_embeddings = torch.cat((token_embeddings_l, token_embeddings_h), dim=-1)  # (b m 2*dim)
