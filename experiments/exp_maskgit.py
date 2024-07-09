@@ -102,23 +102,33 @@ class ExpMaskGIT(pl.LightningModule):
             fig.suptitle(f'Epoch {self.current_epoch}; Class Index: {class_index}')
             axes = axes.flatten()
             b = 0
-            axes[0].set_xlabel('xhat_l')
+            axes[0].set_title('xhat_l')
             axes[0].plot(x_new_l[b,0,:])
-            axes[1].set_xlabel('xhat_h')
+            axes[1].set_title('xhat_h')
             axes[1].plot(x_new_h[b, 0, :])
-            axes[2].set_xlabel('xhat')
+            axes[2].set_title('xhat')
             axes[2].plot(x_new[b, 0, :])
 
             # compute metrics
             x_new = x_new.numpy()
             fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
+            mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, x_new)
             self.log('metrics/FID', fid_test_gen)
+            self.log('metrics/MDD', mdd)
+            self.log('metrics/ACD', acd)
+            self.log('metrics/SD', sd)
+            self.log('metrics/KD', kd)
 
             if self.use_fidelity_enhancer:
                 x_new_fe = self.fidelity_enhancer(torch.from_numpy(x_new).to(self.device)).cpu().numpy()
                 fid_train_gen_fe, fid_test_gen_fe = self.metrics.fid_score(x_new_fe)
-                self.log('metrics/FID_with_FE', fid_test_gen_fe)
-                axes[3].set_xlabel('FE(xhat)')
+                mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, x_new_fe)
+                self.log('metrics/FID with FE', fid_test_gen_fe)
+                self.log('metrics/MDD with FE', mdd)
+                self.log('metrics/ACD with FE', acd)
+                self.log('metrics/SD with FE', sd)
+                self.log('metrics/KD with FE', kd)
+                axes[3].set_title('FE(xhat)')
                 axes[3].plot(x_new_fe[b,0,:])
 
             for ax in axes:

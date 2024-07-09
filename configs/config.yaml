@@ -16,7 +16,7 @@ trainer_params:
     stage2: 50000
     stage_fid_enhancer: 5000
   val_check_interval:
-    stage1: 1000  #500
+    stage1: 500
     stage2: 500
     stage_fid_enhancer: 50
 

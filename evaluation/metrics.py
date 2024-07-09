@@ -5,6 +5,7 @@ import os
 import copy
 import tempfile
 from pathlib import Path
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -22,6 +23,7 @@ from supervised_FCN_2.example_compute_IS import calculate_inception_score
 from evaluation.rocket_functions import generate_kernels, apply_kernels
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 from utils import freeze
+from evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
 
 
 class Metrics(nn.Module):
@@ -50,17 +52,17 @@ class Metrics(nn.Module):
 
         # load the numpy matrix of the test samples
         dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True)
-        X_train = dataset_importer.X_train[:, None, :]  # (b c l)
-        X_test = dataset_importer.X_test[:, None, :]  # (b c l)
+        self.X_train = dataset_importer.X_train[:, None, :]  # (b c l)
+        self.X_test = dataset_importer.X_test[:, None, :]  # (b c l)
         self.n_classes = len(np.unique(dataset_importer.Y_train))
         
         # load rocket (to extract unbiased representations)
-        input_length = X_train.shape[-1]
+        input_length = self.X_train.shape[-1]
         self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
 
         # compute z_train, z_test
-        self.z_train = self.compute_z(X_train)  # (b d)
-        self.z_test = self.compute_z(X_test)  # (b d)
+        self.z_train = self.compute_z(self.X_train)  # (b d)
+        self.z_test = self.compute_z(self.X_test)  # (b d)
 
     def _extract_feature_representations(self, x:np.ndarray):
         """
@@ -122,3 +124,16 @@ class Metrics(nn.Module):
 
         IS_mean, IS_std = calculate_inception_score(p_yx_gen, n_split=5)
         return IS_mean, IS_std
+
+    def stat_metrics(self, x_real:np.ndarray, x_gen:np.ndarray) -> Tuple[float, float, float, float]:
+        """
+        computes the statistical metrices introduced in the paper, [Ang, Yihao, et al. "Tsgbench: Time series generation benchmark." arXiv preprint arXiv:2309.03755 (2023).]
+
+        x_real: (batch 1 length)
+        x_gen: (batch 1 length)
+        """
+        mdd = marginal_distribution_difference(x_real, x_gen)
+        acd = auto_correlation_difference(x_real, x_gen)
+        sd = skewness_difference(x_real, x_gen)
+        kd = kurtosis_difference(x_real, x_gen)
+        return mdd, acd, sd, kd

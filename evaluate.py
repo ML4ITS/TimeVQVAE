@@ -19,7 +19,6 @@ from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR
 import pandas as pd
 
-from experiments.exp_maskgit import ExpMaskGIT
 from evaluation.evaluation import Evaluation
 from utils import get_root_dir, load_yaml_param_settings, save_model
 

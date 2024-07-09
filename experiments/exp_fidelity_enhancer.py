@@ -14,6 +14,7 @@ from einops import rearrange
 from generators.maskgit import MaskGIT
 import pytorch_lightning as pl
 
+from evaluation.metrics import Metrics
 from generators.fidelity_enhancer import FidelityEnhancer
 from experiments.exp_maskgit import ExpMaskGIT
 from utils import get_root_dir, freeze, compute_downsample_rate, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
@@ -25,6 +26,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
                  input_length: int,
                  config: dict,
                  n_classes: int,
+                 use_pretrained_ExpMaskGIT:str,
+                 feature_extractor_type:str,
                  ):
         super().__init__()
         self.config = config
@@ -34,16 +37,21 @@ class ExpFidelityEnhancer(pl.LightningModule):
         self.fidelity_enhancer = FidelityEnhancer(input_length, 1, config)
 
         # load the stage2 model
-        self.stage2 = ExpMaskGIT.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
-                                                      dataset_name=dataset_name, 
-                                                      input_length=input_length, 
-                                                      n_classes=n_classes,
-                                                      config=config,
-                                                      map_location='cpu')
-        freeze(self.stage2)
-        self.stage2.eval()
+        exp_maskgit_config = {'dataset_name':dataset_name, 'input_length':input_length, 'config':config, 'n_classes':n_classes, 'use_fidelity_enhancer':False, 'feature_extractor_type':'rocket'}
+        # ckpt_fname = ExpMaskGIT_ckpt_fname
+        ckpt_fname = os.path.join('saved_models', f'stage2-{dataset_name}.ckpt')
+        if use_pretrained_ExpMaskGIT and os.path.isfile(ckpt_fname):
+            stage2 = ExpMaskGIT.load_from_checkpoint(ckpt_fname, **exp_maskgit_config, map_location='cpu')
+            self.is_pretrained_maskgit_used = True
+            print('\nThe pretrained ExpMaskGIT is loaded.\n')
+        else:
+            stage2 = ExpMaskGIT(**exp_maskgit_config)
+            self.is_pretrained_maskgit_used = False
+            print('\nno pretrained ExpMaskGIT is available.\n')
+        freeze(stage2)
+        stage2.eval()
 
-        self.maskgit = self.stage2.maskgit
+        self.maskgit = stage2.maskgit
         self.encoder_l = self.maskgit.encoder_l
         self.decoder_l = self.maskgit.decoder_l
         self.vq_model_l = self.maskgit.vq_model_l
@@ -52,6 +60,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
         self.vq_model_h = self.maskgit.vq_model_h
 
         self.svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
+
+        self.metrics = Metrics(dataset_name, feature_extractor_type)
 
     def forward(self, x):
         """
@@ -117,46 +127,65 @@ class ExpFidelityEnhancer(pl.LightningModule):
             self.log(f'val/{k}', loss_hist[k])
 
         # maskgit sampling
-        if batch_idx == 0:
+        if batch_idx == 0 and self.is_pretrained_maskgit_used:
             class_index = np.random.choice(np.concatenate(([None], np.unique(y.cpu()))))
 
             # unconditional sampling
-            s_l, s_h = self.maskgit.iterative_decoding(device=x.device, class_index=class_index)
+            s_l, s_h = self.maskgit.iterative_decoding(num=1024, device=x.device, class_index=class_index)
             x_new_l = self.maskgit.decode_token_ind_to_timeseries(s_l, 'LF').cpu()
             x_new_h = self.maskgit.decode_token_ind_to_timeseries(s_h, 'HF').cpu()
             x_new = x_new_l + x_new_h
-            x_new_corrected = self.fidelity_enhancer(x_new.to(x.device)).detach().cpu().numpy()
+            x_new_corrected = x_new_fe = self.fidelity_enhancer(x_new.to(x.device)).detach().cpu().numpy()
 
             b = 0
             n_figs = 6
             fig, axes = plt.subplots(n_figs, 1, figsize=(4, 2 * n_figs))
-            axes[0].plot(x_new_l[b, 0, :], label='x_l')
-            axes[0].legend()
-            axes[1].plot(x_new_h[b, 0, :], label='x_h')
-            axes[1].legend()
-            axes[2].plot(x_new[b, 0, :], label='x')
-            axes[2].legend()
-            axes[3].plot(x_new_corrected[b, 0, :], label=r'$D_s$(x)')
-            axes[3].legend()
+            fig.suptitle(f'Epoch {self.current_epoch}; Class Index: {class_index}')
+
+            axes[0].set_title('xhat_l')
+            axes[0].plot(x_new_l[b, 0, :])
+            axes[1].set_title('xhat_h')
+            axes[1].plot(x_new_h[b, 0, :])
+            axes[2].set_title('xhat')
+            axes[2].plot(x_new[b, 0, :])
+            axes[3].set_title('FE(xhat)')
+            axes[3].plot(x_new_corrected[b, 0, :])
 
             x = x.cpu().numpy()
             x_a = x_a.cpu().numpy()
             xhat = xhat.cpu().numpy()
             b_ = np.random.randint(0, x.shape[0])
-            axes[4].plot(x[b_, 0, :], label='x')
-            axes[4].plot(xhat[b_, 0, :], label='xhat')
-            axes[4].legend()
+            axes[4].set_title('x vs FE(x`)')
+            axes[4].plot(x[b_, 0, :], alpha=0.7)
+            axes[4].plot(xhat[b_, 0, :], alpha=0.7)
 
-            axes[5].plot(x_a[b_, 0, :], label='x_a')
-            axes[5].plot(xhat[b_, 0, :], label='xhat')
-            axes[5].legend()
+            axes[5].set_title('x` vs FE(x`)')
+            axes[5].plot(x_a[b_, 0, :], alpha=0.7)
+            axes[5].plot(xhat[b_, 0, :], alpha=0.7)
 
             for ax in axes:
                 ax.set_ylim(-4, 4)
-            plt.title(f'ep_{self.current_epoch}; class-{class_index}')
             plt.tight_layout()
             wandb.log({f"maskgit sample": wandb.Image(plt)})
             plt.close()
+            
+            # log the evaluation metrics
+            x_new = x_new.numpy()
+            fid_train_gen, fid_test_gen = self.metrics.fid_score(x_new)
+            mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, x_new)
+            self.log('metrics/FID', fid_test_gen)
+            self.log('metrics/MDD', mdd)
+            self.log('metrics/ACD', acd)
+            self.log('metrics/SD', sd)
+            self.log('metrics/KD', kd)
+
+            fid_train_gen_fe, fid_test_gen_fe = self.metrics.fid_score(x_new_fe)
+            mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, x_new_fe)
+            self.log('metrics/FID with FE', fid_test_gen_fe)
+            self.log('metrics/MDD with FE', mdd)
+            self.log('metrics/ACD with FE', acd)
+            self.log('metrics/SD with FE', sd)
+            self.log('metrics/KD with FE', kd)
 
         return loss_hist
 

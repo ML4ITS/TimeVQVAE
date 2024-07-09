@@ -72,8 +72,10 @@ class Evaluation(nn.Module):
         self.stage2 = ExpMaskGIT.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
                                                       dataset_name=dataset_name, 
                                                       input_length=input_length, 
-                                                      n_classes=n_classes,
                                                       config=config,
+                                                      n_classes=n_classes,
+                                                      use_fidelity_enhancer=use_fidelity_enhancer,
+                                                      feature_extractor_type=feature_extractor_type,
                                                       map_location='cpu')
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit

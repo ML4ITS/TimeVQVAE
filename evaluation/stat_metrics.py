@@ -1,45 +1,53 @@
 import numpy as np
-from scipy.stats import skew, kurtosis
+from scipy.stats import skew, kurtosis, gaussian_kde
 
-def marginal_distribution_difference(real, generated, bins:int):
-    """Calculates the Marginal Distribution Difference (MDD) between real and generated data."""
-    batch_size, _, length = real.shape
-    mdd = 0
-    for i in range(batch_size):
-        real_hist, _ = np.histogram(real[i, 0, :], bins=bins, density=True)
-        gen_hist, _ = np.histogram(generated[i, 0, :], bins=bins, density=True)
-        mdd += np.mean(np.abs(real_hist - gen_hist))
-    return mdd / batch_size
+def marginal_distribution_difference(real, generated):
+    """
+    Calculates the Marginal Distribution Difference (MDD) between real and generated data.
+    
+    NB!
+    - The original code from the TSBBench paper uses histogram differences, which may be sensitive to the choice of bins. 
+      To improve this, we consider using kernel density estimation (KDE) for a smoother and more robust comparison.
+    """
+    real_values = real.reshape(-1)
+    generated_values = generated.reshape(-1)
+    
+    real_kde = gaussian_kde(real_values)
+    gen_kde = gaussian_kde(generated_values)
+    
+    x = np.linspace(min(real_values.min(), generated_values.min()), 
+                    max(real_values.max(), generated_values.max()), 100)
+    
+    mdd = np.mean(np.abs(real_kde(x) - gen_kde(x)))
+    return mdd
 
 def auto_correlation_difference(real, generated):
     """Calculates the Auto-Correlation Difference (ACD) between real and generated data."""
-    batch_size, _, length = real.shape
-    acd = 0
-    for i in range(batch_size):
-        real_acf = np.correlate(real[i, 0, :] - np.mean(real[i, 0, :]), real[i, 0, :] - np.mean(real[i, 0, :]), mode='full') / length
-        gen_acf = np.correlate(generated[i, 0, :] - np.mean(generated[i, 0, :]), generated[i, 0, :] - np.mean(generated[i, 0, :]), mode='full') / length
-        acd += np.mean(np.abs(real_acf - gen_acf))
-    return acd / batch_size
+    def autocorrelation(x):
+        result = np.correlate(x, x, mode='full')
+        return result[result.size // 2:]
+    
+    real_acf = np.mean([autocorrelation(series[0]) for series in real], axis=0)
+    generated_acf = np.mean([autocorrelation(series[0]) for series in generated], axis=0)
+    
+    acd = np.mean(np.abs(real_acf - generated_acf))
+    return acd
 
 def skewness_difference(real, generated):
     """Calculates the Skewness Difference (SD) between real and generated data."""
-    batch_size, _, length = real.shape
-    sd = 0
-    for i in range(batch_size):
-        real_skew = skew(real[i, 0, :])
-        gen_skew = skew(generated[i, 0, :])
-        sd += np.abs(real_skew - gen_skew)
-    return sd / batch_size
+    real_skew = skew(real.reshape(-1))
+    generated_skew = skew(generated.reshape(-1))
+    
+    sd = np.abs(real_skew - generated_skew)
+    return sd
 
 def kurtosis_difference(real, generated):
     """Calculates the Kurtosis Difference (KD) between real and generated data."""
-    batch_size, _, length = real.shape
-    kd = 0
-    for i in range(batch_size):
-        real_kurt = kurtosis(real[i, 0, :])
-        gen_kurt = kurtosis(generated[i, 0, :])
-        kd += np.abs(real_kurt - gen_kurt)
-    return kd / batch_size
+    real_kurt = kurtosis(real.reshape(-1))
+    generated_kurt = kurtosis(generated.reshape(-1))
+    
+    kd = np.abs(real_kurt - generated_kurt)
+    return kd
 
 
 if __name__ == '__main__':
@@ -48,7 +56,7 @@ if __name__ == '__main__':
     real_data = np.random.normal(0, 1, (10, 1, 100))  # example real data
     generated_data = np.random.normal(0, 1, (10, 1, 100))  # example generated data
 
-    print("Marginal Distribution Difference:", marginal_distribution_difference(real_data, generated_data, bins=50))
+    print("Marginal Distribution Difference:", marginal_distribution_difference(real_data, generated_data))
     print("Auto-Correlation Difference:", auto_correlation_difference(real_data, generated_data))
     print("Skewness Difference:", skewness_difference(real_data, generated_data))
     print("Kurtosis Difference:", kurtosis_difference(real_data, generated_data))
