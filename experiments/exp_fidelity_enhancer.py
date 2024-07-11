@@ -138,7 +138,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             x_new_corrected = x_new_fe = self.fidelity_enhancer(x_new.to(x.device)).detach().cpu().numpy()
 
             b = 0
-            n_figs = 6
+            n_figs = 9
             fig, axes = plt.subplots(n_figs, 1, figsize=(4, 2 * n_figs))
             fig.suptitle(f'Epoch {self.current_epoch}; Class Index: {class_index}')
 
@@ -162,6 +162,15 @@ class ExpFidelityEnhancer(pl.LightningModule):
             axes[5].set_title('x` vs FE(x`)')
             axes[5].plot(x_a[b_, 0, :], alpha=0.7)
             axes[5].plot(xhat[b_, 0, :], alpha=0.7)
+            
+            axes[6].set_title('x')
+            axes[6].plot(x[b_, 0, :])
+
+            axes[7].set_title('x`')
+            axes[7].plot(x_a[b_, 0, :])
+
+            axes[8].set_title('FE(x`)')
+            axes[8].plot(xhat[b_, 0, :])
 
             for ax in axes:
                 ax.set_ylim(-4, 4)

@@ -50,7 +50,7 @@ We did so becaused the original datasets have two primary issues to be used to t
 - `configs/config.yaml`: configuration for dataset, data loading, optimizer, and models (_i.e.,_ encoder, decoder, vector-quantizer, and MaskGIT)
 - `config/sconfig_cas.yaml`: configuration for running CAS, Classification Accuracy Score (= TSTR, Training on Synthetic and Test on Real).
 
-### Run
+### Training
 :rocket: The stage 1 and stage 2 training can be performed with the following command: 
 ```commandline
 python stage1.py --dataset_names FordA --gpu_device_idx 0
@@ -114,11 +114,6 @@ To be more precise, we first sample a token set with a naive iterative decoding 
 The figure below illustrates the overview of [2].
 <p align="center">
 <img src=".fig/proposed_sampling_strategy_overview.png" alt="" width=100% height=100%>
-</p>
-
-The visual results are presented in the following figure:
-<p align="center">
-<img src=".fig/unconditional_sampling_visual_inspection.png" alt="" width=100% height=100%>
 </p>
 
 You can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`.

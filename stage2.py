@@ -100,16 +100,13 @@ def train_stage2(config: dict,
                'IS_mean': IS_mean,
                'IS_std': IS_std})
 
-    # evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), x_gen)
-    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, x_gen,
-                                     'X_train vs X_gen')
-    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), evaluation.X_test, x_gen, 'X_test vs X_gen')
-    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, evaluation.X_test,
-                                     'X_train vs X_test')
+    evaluation.log_visual_inspection(evaluation.X_train, x_gen, 'X_train vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
 
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
-    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
+    evaluation.log_pca([z_train, z_gen], ['z_train', 'z_gen'])
+    evaluation.log_pca([z_test, z_gen], ['z_test', 'z_gen'])
+    evaluation.log_pca([z_train, z_test], ['z_train', 'z_test'])
 
     wandb.finish()
 

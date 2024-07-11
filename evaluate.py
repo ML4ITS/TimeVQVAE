@@ -79,8 +79,8 @@ def evaluate(config: dict,
     z_test = evaluation.z_test
     z_rec_train = evaluation.compute_z_rec('train')
     z_rec_test = evaluation.compute_z_rec('test')
-    z_svq_train = evaluation.compute_z_svq('train')
-    z_svq_test = evaluation.compute_z_svq('test')
+    z_svq_train, x_prime_train = evaluation.compute_z_svq('train')
+    z_svq_test, x_prime_test = evaluation.compute_z_svq('test')
     z_gen = evaluation.compute_z_gen(x_gen)
 
     IS_mean, IS_std = evaluation.inception_score(x_gen)
@@ -90,19 +90,27 @@ def evaluate(config: dict,
                'IS_mean': IS_mean,
                'IS_std': IS_std})
 
-    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, x_gen, 'X_train vs X_gen')
-    evaluation.log_visual_inspection(min(200, evaluation.X_test.shape[0]), evaluation.X_test, x_gen, 'X_test vs X_gen')
-    evaluation.log_visual_inspection(min(200, evaluation.X_train.shape[0]), evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
+    evaluation.log_visual_inspection(evaluation.X_train, x_gen, 'X_train vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
+    evaluation.log_visual_inspection(x_prime_train, x_prime_test, 'X_prime_train & X_prime_test')
+    
+    evaluation.log_pca([z_train,], ['z_train',])
+    evaluation.log_pca([z_test,], ['z_test',])
+    evaluation.log_pca([z_gen,], ['z_gen',])
+    evaluation.log_pca([z_svq_train,], ['z_svq_train',])
+    evaluation.log_pca([z_svq_test,], ['z_svq_test',])
 
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_gen, ['z_train', 'z_gen'])
-    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_gen, ['z_test', 'z_gen'])
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_test, ['z_train', 'z_test'])
+    evaluation.log_pca([z_train, z_gen], ['z_train', 'z_gen'])
+    evaluation.log_pca([z_test, z_gen], ['z_test', 'z_gen'])
+    evaluation.log_pca([z_train, z_test], ['z_train', 'z_test'])
 
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_rec_train, ['z_train', 'z_rec_train'])
-    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_rec_test, ['z_test', 'z_rec_test'])
+    evaluation.log_pca([z_train, z_rec_train], ['z_train', 'z_rec_train'])
+    evaluation.log_pca([z_test, z_rec_test], ['z_test', 'z_rec_test'])
 
-    evaluation.log_pca(min(1000, z_train.shape[0]), z_train, z_svq_train, ['z_train', 'z_svq_train'])
-    evaluation.log_pca(min(1000, z_test.shape[0]), z_test, z_svq_test, ['z_test', 'z_svq_test'])
+    evaluation.log_pca([z_train, z_svq_train], ['z_train', 'z_svq_train'])
+    evaluation.log_pca([z_test, z_svq_test], ['z_test', 'z_svq_test'])
+
 
     wandb.finish()
 

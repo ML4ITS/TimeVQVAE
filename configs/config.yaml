@@ -2,8 +2,8 @@ dataset:
   in_channels: 1
   data_scaling: True
   batch_sizes:
-    stage1: 64 #128
-    stage2: 256
+    stage1: 16 #128
+    stage2: 128
     stage_fid_enhancer: 128
   num_workers: 0
 
@@ -12,11 +12,11 @@ exp_params:
 
 trainer_params:
   max_steps:
-    stage1: 5000
+    stage1: 50000
     stage2: 50000
     stage_fid_enhancer: 5000
   val_check_interval:
-    stage1: 500
+    stage1: 5000
     stage2: 500
     stage_fid_enhancer: 50
 

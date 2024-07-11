@@ -5,6 +5,7 @@ import os
 import copy
 import tempfile
 from pathlib import Path
+from typing import List
 
 import torch
 import torch.nn.functional as F
@@ -74,7 +75,7 @@ class Evaluation(nn.Module):
                                                       input_length=input_length, 
                                                       config=config,
                                                       n_classes=n_classes,
-                                                      use_fidelity_enhancer=use_fidelity_enhancer,
+                                                      use_fidelity_enhancer=False,
                                                       feature_extractor_type=feature_extractor_type,
                                                       map_location='cpu')
         self.stage2.eval()
@@ -94,7 +95,9 @@ class Evaluation(nn.Module):
         self.pca = PCA(n_components=2, random_state=0)
         self.z_train = self.compute_z('train')
         self.z_test = self.compute_z('test')
-        self.pca.fit(self.z_train)
+        z_transform_pca = self.pca.fit_transform(self.z_train)
+        self.xmin_pca, self.xmax_pca = np.min(z_transform_pca[:,0]), np.max(z_transform_pca[:,0])
+        self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
 
     def sample(self, n_samples: int, kind: str, class_index: int = -1):
         assert kind in ['unconditional', 'conditional']
@@ -183,6 +186,7 @@ class Evaluation(nn.Module):
 
         # get feature vectors from `X_test`
         zs = []
+        xs_a = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
             x = X[s]  # (b 1 l)
@@ -197,12 +201,14 @@ class Evaluation(nn.Module):
             x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
             x_a = x_a_l + x_a_h  # (b c l)
             x_a = x_a.cpu().numpy().astype(float)
+            xs_a.append(x_a)
 
             z_t = self._extract_feature_representations(x_a)
             zs.append(z_t)
         zs = np.concatenate(zs, axis=0)
-        return zs
-    
+        xs_a = np.concatenate(xs_a, axis=0)
+        return zs, xs_a
+
     def compute_z(self, kind: str) -> np.ndarray:
         """
         It computes representation z given input x
@@ -280,14 +286,14 @@ class Evaluation(nn.Module):
         IS_mean, IS_std = calculate_inception_score(p_yx_gen)
         return IS_mean, IS_std
 
-    def log_visual_inspection(self, n_plot_samples: int, X1, X2, title: str, ylim: tuple = (-5, 5)):
+    def log_visual_inspection(self, X1, X2, title: str, ylim: tuple = (-5, 5), n_plot_samples:int=200):
         # `X_test`
         sample_ind = np.random.randint(0, X1.shape[0], n_plot_samples)
         fig, axes = plt.subplots(2, 1, figsize=(4, 4))
         plt.suptitle(title)
         for i in sample_ind:
             axes[0].plot(X1[i, 0, :], alpha=0.1, color='C0')
-        axes[0].set_xticks([])
+        # axes[0].set_xticks([])
         axes[0].set_ylim(*ylim)
         # axes[0].set_title('test samples')
 
@@ -302,82 +308,45 @@ class Evaluation(nn.Module):
         wandb.log({f"visual comp ({title})": wandb.Image(plt)})
         plt.close()
 
-    # def log_pca(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
-    def log_pca(self, n_plot_samples: int, Z1: np.ndarray, Z2: np.ndarray, labels):
-
-        # X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
-        # X_gen = X_gen.cpu().numpy()
-
-        # sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
-        ind1 = np.random.choice(range(Z1.shape[0]), size=n_plot_samples, replace=True)
-        ind2 = np.random.choice(range(Z2.shape[0]), size=n_plot_samples, replace=True)
-
-        # # PCA: data space
-        # pca = PCA(n_components=2)
-        # X_embedded_test = pca.fit_transform(self.X_test.squeeze()[sample_ind_test])
-        # X_embedded_gen = pca.transform(X_gen.squeeze()[sample_ind_gen])
-        #
-        # plt.figure(figsize=(4, 4))
-        # # plt.title("PCA in the data space")
-        # plt.scatter(X_embedded_test[:, 0], X_embedded_test[:, 1], alpha=0.1, label='test')
-        # plt.scatter(X_embedded_gen[:, 0], X_embedded_gen[:, 1], alpha=0.1, label='gen')
-        # plt.legend()
-        # plt.tight_layout()
-        # wandb.log({"PCA-data_space": wandb.Image(plt)})
-        # plt.close()
-
-        # PCA: latent space
-        # pca = PCA(n_components=2, random_state=0)
-        Z1_embed = self.pca.transform(Z1[ind1])
-        Z2_embed = self.pca.transform(Z2[ind2])
-
-        plt.figure(figsize=(4, 4))
-        # plt.title("PCA in the representation space by the trained encoder");
-        plt.scatter(Z1_embed[:, 0], Z1_embed[:, 1], alpha=0.1, label=labels[0])
-        plt.scatter(Z2_embed[:, 0], Z2_embed[:, 1], alpha=0.1, label=labels[1])
-        plt.legend()
-        plt.tight_layout()
-        wandb.log({f"PCA on Z ({labels[0]} vs  {labels[1]})": wandb.Image(plt)})
-        plt.close()
-
-    def log_visual_inspection_train_test(self, n_plot_samples: int, ylim: tuple = (-5, 5)):
-        # `X_train`
-        sample_ind = np.random.randint(0, self.X_train.shape[0], n_plot_samples)
-        fig, axes = plt.subplots(2, 1, figsize=(4, 4))
-        for i in sample_ind:
-            axes[0].plot(self.X_train[i, 0, :], alpha=0.1)
-        axes[0].set_xticks([])
-        axes[0].set_ylim(*ylim)
-        axes[0].set_title('train samples')
-
-        # `X_test`
-        sample_ind = np.random.randint(0, self.X_test.shape[0], n_plot_samples)
-        for i in sample_ind:
-            axes[1].plot(self.X_test[i, 0, :], alpha=0.1)
-        axes[1].set_ylim(*ylim)
-        axes[1].set_title('test samples')
-
-        plt.tight_layout()
-        wandb.log({"visual inspection (X_train vs X_test)": wandb.Image(plt)})
-        plt.close()
-
-    # def log_pca_ztrain_ztest(self, n_plot_samples: int, z1: np.ndarray, z2: np.ndarray):
-    #     sample_ind1 = np.random.choice(range(z1.shape[0]), size=n_plot_samples, replace=True)
-    #     sample_ind2 = np.random.choice(range(z2.shape[0]), size=n_plot_samples, replace=True)
+    # def log_pca(self, n_plot_samples: int, Z1: np.ndarray, Z2: np.ndarray, labels):
+    #     # sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
+    #     ind1 = np.random.choice(range(Z1.shape[0]), size=n_plot_samples, replace=True)
+    #     ind2 = np.random.choice(range(Z2.shape[0]), size=n_plot_samples, replace=True)
 
     #     # PCA: latent space
-    #     pca = PCA(n_components=2)
-    #     z_embedded1 = pca.fit_transform(z1[sample_ind1].squeeze())
-    #     z_embedded2 = pca.transform(z2[sample_ind2].squeeze())
+    #     # pca = PCA(n_components=2, random_state=0)
+    #     Z1_embed = self.pca.transform(Z1[ind1])
+    #     Z2_embed = self.pca.transform(Z2[ind2])
 
     #     plt.figure(figsize=(4, 4))
     #     # plt.title("PCA in the representation space by the trained encoder");
-    #     plt.scatter(z_embedded1[:, 0], z_embedded1[:, 1], alpha=0.1, label='train')
-    #     plt.scatter(z_embedded2[:, 0], z_embedded2[:, 1], alpha=0.1, label='test')
+    #     plt.scatter(Z1_embed[:, 0], Z1_embed[:, 1], alpha=0.1, label=labels[0])
+    #     plt.scatter(Z2_embed[:, 0], Z2_embed[:, 1], alpha=0.1, label=labels[1])
     #     plt.legend()
     #     plt.tight_layout()
-    #     wandb.log({"PCA-latent_space (z_train vs z_test)": wandb.Image(plt)})
+    #     wandb.log({f"PCA on Z ({labels[0]} vs  {labels[1]})": wandb.Image(plt)})
     #     plt.close()
+
+    def log_pca(self, Zs:List[np.ndarray], labels:List[str], n_plot_samples:int=1000):
+        assert len(Zs) == len(labels)
+
+        plt.figure(figsize=(4, 4))
+
+        for Z, label in zip(Zs, labels):
+            ind = np.random.choice(range(Z.shape[0]), size=n_plot_samples, replace=True)
+            Z_embed = self.pca.transform(Z[ind])
+            
+            plt.scatter(Z_embed[:, 0], Z_embed[:, 1], alpha=0.1, label=label)
+            
+            xpad = (self.xmax_pca - self.xmin_pca) * 0.02
+            ypad = (self.ymax_pca - self.ymin_pca) * 0.02
+            plt.xlim(self.xmin_pca-xpad, self.xmax_pca+xpad)
+            plt.ylim(self.ymin_pca-ypad, self.ymax_pca+ypad)
+
+        plt.legend(loc='upper right')
+        plt.tight_layout()
+        wandb.log({f"PCA on Z ({labels})": wandb.Image(plt)})
+        plt.close()
 
     def log_tsne(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
         X_gen = F.interpolate(X_gen, size=self.X_test.shape[-1], mode='linear', align_corners=True)
