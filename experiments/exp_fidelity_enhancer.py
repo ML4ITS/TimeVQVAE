@@ -279,11 +279,12 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
             x = x.cpu().numpy()
             xprime = xprime.cpu().numpy()
+            xprime_R = xprime_R.cpu().numpy()
             xhat = xhat.cpu().numpy()
             b_ = np.random.randint(0, x.shape[0])
             axes[4].set_title('x vs FE(x`)')
             axes[4].plot(x[b_, 0, :], alpha=0.7)
-            axes[4].plot(xhat[b_, 0, :], alpha=0.7)
+            axes[4].plot(xprime_R[b_, 0, :], alpha=0.7)
 
             axes[5].set_title('x` vs FE(x`)')
             axes[5].plot(xprime[b_, 0, :], alpha=0.7)
