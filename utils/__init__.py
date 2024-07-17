@@ -11,6 +11,7 @@ import torch
 import torch.nn.functional as F
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import IsolationForest
 
 from sklearn.preprocessing import MinMaxScaler
 import requests
@@ -391,3 +392,12 @@ def get_target_ucr_dataset_names(args, ):
         #     raise ValueError
     return dataset_names
 
+
+def remove_outliers(data:np.ndarray):
+    """
+    data: (b d)
+    """
+    iso_forest = IsolationForest(max_samples=0.9, contamination=0.1, random_state=0)
+    outliers = iso_forest.fit_predict(data) == 1
+    filtered_data = data[outliers]
+    return filtered_data

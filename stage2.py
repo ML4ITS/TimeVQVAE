@@ -87,7 +87,7 @@ def train_stage2(config: dict,
                             use_fidelity_enhancer=use_fidelity_enhancer,
                             feature_extractor_type=feature_extractor_type).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
-    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
+    (_, _, x_gen), _ = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.z_train
     z_test = evaluation.z_test
     z_gen = evaluation.compute_z_gen(x_gen)

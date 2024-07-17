@@ -47,8 +47,8 @@ def gumbel_sample(t, temperature=1., dim=-1):
     return ((t / temperature) + gumbel_noise(t)).argmax(dim=dim)
 
 
-def softmax_sample(t, temperature=1., dim=-1):
-    if temperature == 0:
+def softmax_sample(t, temperature, dim=-1):
+    if isinstance(temperature, type(None)):
         return t.argmax(dim=dim)
 
     m = Categorical(logits=t / temperature)
@@ -209,7 +209,7 @@ class EuclideanCodebook(nn.Module):
                 + embed.pow(2).sum(0, keepdim=True)
         )
         # embed_ind = gumbel_sample(dist, dim=-1, temperature=self.sample_codebook_temp)
-        temp = 0. if not svq_temp else svq_temp
+        temp = svq_temp
         if self.training:
             embed_ind = softmax_sample(dist, dim=-1, temperature=temp)
         else:

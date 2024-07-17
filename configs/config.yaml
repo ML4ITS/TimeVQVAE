@@ -3,8 +3,8 @@ dataset:
   data_scaling: True
   batch_sizes:
     stage1: 16 #128
-    stage2: 128
-    stage_fid_enhancer: 128
+    stage2: 16
+    stage_fid_enhancer: 16
   num_workers: 0
 
 exp_params:
@@ -14,11 +14,11 @@ trainer_params:
   max_steps:
     stage1: 50000
     stage2: 50000
-    stage_fid_enhancer: 5000
+    stage_fid_enhancer: 10000
   val_check_interval:
     stage1: 5000
-    stage2: 500
-    stage_fid_enhancer: 50
+    stage2: 5000
+    stage_fid_enhancer: 100
 
 encoder:
   dim: 128
@@ -73,9 +73,6 @@ class_guidance:
   guidance_scale: 1.
 
 fidelity_enhancer:
-  svq_temp_rng:
-    - 1.
-    - 4.
   dim: 8
   dim_mults:
     - 1
@@ -86,5 +83,5 @@ fidelity_enhancer:
   dropout: 0.5
 
 evaluation:
-  batch_size: 128
+  batch_size: 32
   min_num_gen_samples: 1024

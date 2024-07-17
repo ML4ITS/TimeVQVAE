@@ -395,6 +395,7 @@ class FidelityEnhancer(nn.Module):
         super().__init__()
         self.input_length = input_length
         self.unet = Unet1D(channels=in_channels, **config['fidelity_enhancer'])
+        self.register_buffer('tau', torch.tensor(0.).float())
 
     def forward(self, x_a):
         """

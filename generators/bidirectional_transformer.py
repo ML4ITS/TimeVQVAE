@@ -108,6 +108,7 @@ class BidirectionalTransformer(nn.Module):
                                                        dim=hidden_dim,
                                                        depth=n_layers,
                                                        heads=heads,
+                                                       attn_dim_head=64,
                                                        use_rmsnorm=use_rmsnorm,
                                                        ff_mult=ff_mult,
                                                        layer_dropout=model_dropout,
@@ -121,7 +122,6 @@ class BidirectionalTransformer(nn.Module):
         ])
         codebook_size = codebook_sizes['lf'] if kind == 'LF' else codebook_sizes['hf']
         self.bias = nn.Parameter(torch.zeros(self.num_tokens, codebook_size + 1))
-        self.ln = nn.LayerNorm(in_dim, eps=1e-12)
 
         if kind == 'HF':
             # self.projector = nn.Conv1d(num_tokens_l, self.num_tokens, kernel_size=1)
@@ -150,7 +150,7 @@ class BidirectionalTransformer(nn.Module):
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
-        embed = self.ln(token_embeddings + position_embeddings)  # (b, n, dim)
+        embed = token_embeddings + position_embeddings  # (b, n, dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
         embed = self.blocks(embed)  # (b, 1+n, dim)
         embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, n, dim)
@@ -180,7 +180,7 @@ class BidirectionalTransformer(nn.Module):
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
-        embed = self.ln(token_embeddings + position_embeddings)  # (b, m, 2*dim)
+        embed = token_embeddings + position_embeddings
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
         embed = self.blocks(embed)  # (b, 1+m, 2*dim)
         embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, m, dim)

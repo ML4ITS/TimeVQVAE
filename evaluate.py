@@ -49,7 +49,7 @@ def evaluate(config: dict,
              dataset_name: str,
              train_data_loader: DataLoader,
              gpu_device_idx,
-             use_fidelity_enhancer:str,
+             use_fidelity_enhancer:bool,
              feature_extractor_type:str,
              rand_seed:Union[int,None]=None,
              ):
@@ -74,35 +74,36 @@ def evaluate(config: dict,
                             use_fidelity_enhancer=use_fidelity_enhancer,
                             feature_extractor_type=feature_extractor_type).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
-    _, _, x_gen = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
+    (_, _, xhat), xhat_R = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.z_train
     z_test = evaluation.z_test
     z_rec_train = evaluation.compute_z_rec('train')
     z_rec_test = evaluation.compute_z_rec('test')
     z_svq_train, x_prime_train = evaluation.compute_z_svq('train')
     z_svq_test, x_prime_test = evaluation.compute_z_svq('test')
-    z_gen = evaluation.compute_z_gen(x_gen)
+    zhat = evaluation.compute_z_gen(xhat)
+    zhat_R = evaluation.compute_z_gen(xhat_R)
 
-    IS_mean, IS_std = evaluation.inception_score(x_gen)
-    wandb.log({'FID_train_gen': evaluation.fid_score(z_train, z_gen),
-               'FID_test_gen': evaluation.fid_score(z_test, z_gen),
-               'FID_train_test': evaluation.fid_score(z_train, z_test),
-               'IS_mean': IS_mean,
-               'IS_std': IS_std})
+    IS_mean, IS_std = evaluation.inception_score(xhat)
+    wandb.log({'FID(x_train, xhat)': evaluation.fid_score(z_train, zhat),
+               'FID(x_test, xhat)': evaluation.fid_score(z_test, zhat),
+               'FID(x_train, x_test)': evaluation.fid_score(z_train, z_test),
+               'IS_mean(xhat)': IS_mean,
+               'IS_std(xhat)': IS_std})
 
-    evaluation.log_visual_inspection(evaluation.X_train, x_gen, 'X_train vs X_gen')
-    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_train, xhat, 'X_train vs Xhat')
+    evaluation.log_visual_inspection(evaluation.X_test, xhat, 'X_test vs Xhat')
     evaluation.log_visual_inspection(evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
     evaluation.log_visual_inspection(x_prime_train, x_prime_test, 'X_prime_train & X_prime_test')
     
     evaluation.log_pca([z_train,], ['z_train',])
     evaluation.log_pca([z_test,], ['z_test',])
-    evaluation.log_pca([z_gen,], ['z_gen',])
+    evaluation.log_pca([zhat,], ['zhat',])
     evaluation.log_pca([z_svq_train,], ['z_svq_train',])
     evaluation.log_pca([z_svq_test,], ['z_svq_test',])
 
-    evaluation.log_pca([z_train, z_gen], ['z_train', 'z_gen'])
-    evaluation.log_pca([z_test, z_gen], ['z_test', 'z_gen'])
+    evaluation.log_pca([z_train, zhat], ['z_train', 'zhat'])
+    evaluation.log_pca([z_test, zhat], ['z_test', 'zhat'])
     evaluation.log_pca([z_train, z_test], ['z_train', 'z_test'])
 
     evaluation.log_pca([z_train, z_rec_train], ['z_train', 'z_rec_train'])
@@ -110,7 +111,19 @@ def evaluate(config: dict,
 
     evaluation.log_pca([z_train, z_svq_train], ['z_train', 'z_svq_train'])
     evaluation.log_pca([z_test, z_svq_test], ['z_test', 'z_svq_test'])
-
+    
+    if use_fidelity_enhancer:
+        IS_mean, IS_std = evaluation.inception_score(xhat_R)
+        wandb.log({'FID(x_train, xhat_R)': evaluation.fid_score(z_train, zhat_R),
+                   'FID(x_test, xhat_R)': evaluation.fid_score(z_test, zhat_R),
+                   'IS_mean(xhat_R)': IS_mean,
+                   'IS_std(xhat_R)': IS_std})
+        evaluation.log_visual_inspection(evaluation.X_train, xhat_R, 'X_train vs Xhat_R')
+        evaluation.log_visual_inspection(evaluation.X_test, xhat_R, 'X_test vs Xhat_R')
+        evaluation.log_visual_inspection(xhat[[0]], xhat_R[[0]], 'xhat vs xhat_R', alpha=1., n_plot_samples=1)  # visaulize a single pair
+        evaluation.log_pca([zhat_R,], ['zhat_R',])
+        evaluation.log_pca([z_train, zhat_R], ['z_train', 'zhat_R'])
+        evaluation.log_pca([z_test, zhat_R], ['z_test', 'zhat_R'])
 
     wandb.finish()
 

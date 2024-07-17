@@ -36,7 +36,7 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
-    parser.add_argument('--use_pretrained_ExpMaskGIT', type=str2bool, default=False, help='enable using the pretrained ExpMaskGIT.')
+    parser.add_argument('--use_pretrained_ExpMaskGIT', type=str2bool, default=True, help='enable using the pretrained ExpMaskGIT.')
     parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
     return parser.parse_args()
 
@@ -55,7 +55,8 @@ def train_stage_fid_enhancer(config: dict,
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
     train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, n_classes, use_pretrained_ExpMaskGIT, feature_extractor_type)
-    
+    train_exp.search_optimal_tau(X_train=train_data_loader.dataset.X[:,None,:], device=gpu_device_idx)
+
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name':dataset_name, 'n_trainable_params':n_trainable_params})
     

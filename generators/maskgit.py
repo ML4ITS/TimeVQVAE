@@ -82,7 +82,7 @@ class MaskGIT(nn.Module):
                                                       config['VQ-VAE']['codebook_dim'],
                                                       **config['MaskGIT']['prior_model_l'],
                                                       n_classes=n_classes,
-                                                      pretrained_tok_emb_l=embed_l,
+                                                    #   pretrained_tok_emb_l=embed_l,  # loading it poses restraining bias, hindering the training
                                                       )
 
         self.transformer_h = BidirectionalTransformer('HF',
@@ -91,8 +91,8 @@ class MaskGIT(nn.Module):
                                                       config['VQ-VAE']['codebook_dim'],
                                                       **config['MaskGIT']['prior_model_h'],
                                                       n_classes=n_classes,
-                                                      pretrained_tok_emb_l=embed_l,
-                                                      pretrained_tok_emb_h=embed_h,
+                                                    #   pretrained_tok_emb_l=embed_l,  # loading it poses restraining bias, hindering the training
+                                                    #   pretrained_tok_emb_h=embed_h,  # loading it poses restraining bias, hindering the training
                                                       num_tokens_l=self.num_tokens_l,
                                                       )
 

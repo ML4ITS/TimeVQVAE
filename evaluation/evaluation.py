@@ -27,7 +27,7 @@ from supervised_FCN_2.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
 from generators.fidelity_enhancer import FidelityEnhancer
 from evaluation.rocket_functions import generate_kernels, apply_kernels
-from utils import zero_pad_low_freq, zero_pad_high_freq
+from utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
 
 
 class Evaluation(nn.Module):
@@ -95,10 +95,14 @@ class Evaluation(nn.Module):
         self.pca = PCA(n_components=2, random_state=0)
         self.z_train = self.compute_z('train')
         self.z_test = self.compute_z('test')
-        z_transform_pca = self.pca.fit_transform(self.z_train)
+
+        z_train = remove_outliers(self.z_train)  # only used to fit pca because `def fid_score` already contains `remove_outliers`
+        z_transform_pca = self.pca.fit_transform(z_train)
+
         self.xmin_pca, self.xmax_pca = np.min(z_transform_pca[:,0]), np.max(z_transform_pca[:,0])
         self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
 
+    @torch.no_grad()
     def sample(self, n_samples: int, kind: str, class_index: int = -1):
         assert kind in ['unconditional', 'conditional']
 
@@ -111,18 +115,17 @@ class Evaluation(nn.Module):
             raise ValueError
 
         # domain shifter
-        with torch.no_grad():
-            num_batches = x_new.shape[0] // self.batch_size + (1 if x_new.shape[0] % self.batch_size != 0 else 0)
-            processed_batches = []
-            for i in range(num_batches):
-                start_idx = i * self.batch_size
-                end_idx = start_idx + self.batch_size
-                mini_batch = x_new[start_idx:end_idx]
-                processed_batch = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
-                processed_batches.append(processed_batch)
-            x_new = torch.cat(processed_batches)
+        num_batches = x_new.shape[0] // self.batch_size + (1 if x_new.shape[0] % self.batch_size != 0 else 0)
+        X_new_fe = []
+        for i in range(num_batches):
+            start_idx = i * self.batch_size
+            end_idx = start_idx + self.batch_size
+            mini_batch = x_new[start_idx:end_idx]
+            x_new_fe = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
+            X_new_fe.append(x_new_fe)
+        X_new_fe = torch.cat(X_new_fe)
 
-        return x_new_l, x_new_h, x_new
+        return (x_new_l, x_new_h, x_new), X_new_fe
 
     def _extract_feature_representations(self, x:np.ndarray):
         """
@@ -193,10 +196,12 @@ class Evaluation(nn.Module):
             x = torch.from_numpy(x).float().to(self.device)
             
             # x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
-            svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
-            svq_temp = np.random.uniform(*svq_temp_rng)
-            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, zero_pad_high_freq, svq_temp=svq_temp)  # (b n)
-            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, zero_pad_low_freq, svq_temp=svq_temp)  # (b m)
+            # svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
+            # svq_temp = np.random.uniform(*svq_temp_rng)
+            # tau = self.config['fidelity_enhancer']['tau']
+            tau = self.fidelity_enhancer.tau.item()
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
             x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
             x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
             x_a = x_a_l + x_a_h  # (b c l)
@@ -260,8 +265,9 @@ class Evaluation(nn.Module):
         z_gen = np.concatenate(z_gen, axis=0)
         return z_gen
 
-    def fid_score(self, z_test: np.ndarray, z_gen: np.ndarray) -> int:
-        fid = calculate_fid(z_test, z_gen)
+    def fid_score(self, z1:np.ndarray, z2:np.ndarray) -> int:
+        z1, z2 = remove_outliers(z1), remove_outliers(z2)
+        fid = calculate_fid(z1, z2)
         return fid
 
     def inception_score(self, X_gen: torch.Tensor):
@@ -286,13 +292,13 @@ class Evaluation(nn.Module):
         IS_mean, IS_std = calculate_inception_score(p_yx_gen)
         return IS_mean, IS_std
 
-    def log_visual_inspection(self, X1, X2, title: str, ylim: tuple = (-5, 5), n_plot_samples:int=200):
+    def log_visual_inspection(self, X1, X2, title: str, ylim: tuple = (-5, 5), n_plot_samples:int=200, alpha:float=0.1):
         # `X_test`
         sample_ind = np.random.randint(0, X1.shape[0], n_plot_samples)
         fig, axes = plt.subplots(2, 1, figsize=(4, 4))
         plt.suptitle(title)
         for i in sample_ind:
-            axes[0].plot(X1[i, 0, :], alpha=0.1, color='C0')
+            axes[0].plot(X1[i, 0, :], alpha=alpha, color='C0')
         # axes[0].set_xticks([])
         axes[0].set_ylim(*ylim)
         # axes[0].set_title('test samples')
@@ -300,7 +306,7 @@ class Evaluation(nn.Module):
         # `X_gen`
         sample_ind = np.random.randint(0, X2.shape[0], n_plot_samples)
         for i in sample_ind:
-            axes[1].plot(X2[i, 0, :], alpha=0.1, color='C0')
+            axes[1].plot(X2[i, 0, :], alpha=alpha, color='C0')
         axes[1].set_ylim(*ylim)
         # axes[1].set_title('generated samples')
 

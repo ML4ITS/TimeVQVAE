@@ -18,7 +18,7 @@ from utils import get_root_dir, load_yaml_param_settings
 
 
 @torch.no_grad()
-def unconditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index=None, batch_size=256, return_representations=False, guidance_scale=1.):
+def unconditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index=None, batch_size=32, return_representations=False, guidance_scale=1.):
     n_iters = n_samples // batch_size
     is_residual_batch = False
     if n_samples % batch_size > 0:
@@ -62,7 +62,7 @@ def unconditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index=N
 
 
 @torch.no_grad()
-def conditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index: int, batch_size=256, return_representations=False, guidance_scale=1.):
+def conditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index: int, batch_size=32, return_representations=False, guidance_scale=1.):
     """
     class_index: starting from 0. If there are two classes, then `class_index` ∈ {0, 1}.
     """
