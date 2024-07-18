@@ -109,6 +109,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             
             fid = self.metrics.fid_score(Zhat, Z_prime)
             fids.append(fid)
+            print(f'tau:{tau} | fid:{round(int(fid))}')
 
             # # ====
             # fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
@@ -219,7 +220,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
         _, s_a_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=svq_temp)  # (b n)
         _, s_a_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=svq_temp)  # (b m)
 
-        fidelity_enhancer_loss, (x_a, xhat) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
+        fidelity_enhancer_loss, (xprime, xprime_R) = self.fidelity_enhancer_loss_fn(x, s_a_l, s_a_h)
 
         # lr scheduler
         sch = self.lr_schedulers()
@@ -261,7 +262,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             # unconditional sampling
             num = 1024
             xhat_l, xhat_h, xhat = self.metrics.sample(self.maskgit, x.device, num, 'unconditional')
-            xhat_fe = self.fidelity_enhancer(xhat.to(x.device)).detach().cpu().numpy()
+            xhat_R = self.fidelity_enhancer(xhat.to(x.device)).detach().cpu().numpy()
 
             b = 0
             n_figs = 9
@@ -275,7 +276,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             axes[2].set_title('xhat')
             axes[2].plot(xhat[b, 0, :])
             axes[3].set_title('FE(xhat)')
-            axes[3].plot(xhat_fe[b, 0, :])
+            axes[3].plot(xhat_R[b, 0, :])
 
             x = x.cpu().numpy()
             xprime = xprime.cpu().numpy()
@@ -317,9 +318,9 @@ class ExpFidelityEnhancer(pl.LightningModule):
             self.log('metrics/SD', sd)
             self.log('metrics/KD', kd)
 
-            zhat_fe = self.metrics.z_gen_fn(xhat_fe)
-            fid_test_gen_fe = self.metrics.fid_score(self.metrics.z_test, zhat_fe)
-            mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, xhat_fe)
+            zhat_R = self.metrics.z_gen_fn(xhat_R)
+            fid_test_gen_fe = self.metrics.fid_score(self.metrics.z_test, zhat_R)
+            mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, xhat_R)
             self.log('metrics/FID with FE', fid_test_gen_fe)
             self.log('metrics/MDD with FE', mdd)
             self.log('metrics/ACD with FE', acd)
@@ -337,9 +338,9 @@ class ExpFidelityEnhancer(pl.LightningModule):
             self.log('metrics/KD (x, x`)', kd)
 
             plt.figure(figsize=(4, 4))
-            labels = ['z_test', 'zhat_fe']
+            labels = ['z_test', 'zhat_R']
             pca = PCA(n_components=2, random_state=0)
-            for i, (Z, label) in enumerate(zip([self.metrics.z_test, zhat_fe], labels)):
+            for i, (Z, label) in enumerate(zip([self.metrics.z_test, zhat_R], labels)):
                 ind = np.random.choice(range(Z.shape[0]), size=num, replace=True)
                 Z_embed = pca.fit_transform(Z[ind]) if i==0 else pca.transform(Z[ind])
                 plt.scatter(Z_embed[:, 0], Z_embed[:, 1], alpha=0.1, label=label)
