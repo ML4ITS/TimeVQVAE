@@ -9,6 +9,7 @@ from typing import Union
 from einops import rearrange
 import torch
 import torch.nn.functional as F
+import torch.nn as nn
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
@@ -401,3 +402,12 @@ def remove_outliers(data:np.ndarray):
     outliers = iso_forest.fit_predict(data) == 1
     filtered_data = data[outliers]
     return filtered_data
+
+
+class SnakeActivation(nn.Module):
+    def __init__(self, initial_a=1.0):
+        super(SnakeActivation, self).__init__()
+        self.a = nn.Parameter(torch.tensor(initial_a, dtype=torch.float32))
+
+    def forward(self, x):
+        return x + (1 / self.a) * torch.sin(self.a * x) ** 2

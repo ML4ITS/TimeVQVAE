@@ -35,19 +35,15 @@ class ExpVQVAE(pl.LightningModule):
 
         # encoder
         self.encoder_l = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], frequency_indepence=False)
-        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], frequency_indepence=False)
-        self.vq_model_l = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
-
-        # decoder
         self.encoder_h = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], frequency_indepence=True)
-        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], frequency_indepence=True)
+
+        # quantizer
+        self.vq_model_l = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
         self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
-        # pre-trained feature extractor in case the perceptual loss is used
-        if config['VQ-VAE']['perceptual_loss_weight']:
-            self.fcn = load_pretrained_FCN(config['dataset']['dataset_name']).to(self.device)
-            self.fcn.eval()
-            freeze(self.fcn)
+        # decoder
+        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], frequency_indepence=False)
+        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], frequency_indepence=True)
 
     def forward(self, batch, batch_idx, return_x_rec:bool=False):
         """
@@ -101,37 +97,31 @@ class ExpVQVAE(pl.LightningModule):
         perplexities['HF'] = perplexity_h
         vq_losses['HF'] = vq_loss_h
 
-        if self.config['VQ-VAE']['perceptual_loss_weight']:
-            z_fcn = self.fcn(x.float(), return_feature_vector=True).detach()
-            zhat_fcn = self.fcn(xhat_l.float() + xhat_h.float(), return_feature_vector=True)
-            recons_loss['perceptual'] = F.mse_loss(z_fcn, zhat_fcn)
-
         # plot `x` and `xhat`
-        # r = np.random.rand()
-        # if self.training and r <= 0.05:
         if not self.training and batch_idx == 0:
             b = np.random.randint(0, x_h.shape[0])
             c = np.random.randint(0, x_h.shape[1])
 
+            alpha = 0.7
             fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
-            plt.suptitle(f'ep_{self.current_epoch}')
-            axes[0].plot(x_l[b, c].cpu())
-            axes[0].plot(xhat_l[b, c].detach().cpu())
-            axes[0].set_title('x_l')
+            plt.suptitle(f'step-{self.global_step} \n (blue:GT, orange:reconstructed)')
+            axes[0].plot(x_l[b, c].cpu(), alpha=alpha)
+            axes[0].plot(xhat_l[b, c].detach().cpu(), alpha=alpha)
+            axes[0].set_title(r'$x_l$ (LF)')
             axes[0].set_ylim(-4, 4)
 
-            axes[1].plot(x_h[b, c].cpu())
-            axes[1].plot(xhat_h[b, c].detach().cpu())
-            axes[1].set_title('x_h')
+            axes[1].plot(x_h[b, c].cpu(), alpha=alpha)
+            axes[1].plot(xhat_h[b, c].detach().cpu(), alpha=alpha)
+            axes[1].set_title(r'$x_h$ (HF)')
             axes[1].set_ylim(-4, 4)
 
-            axes[2].plot(x_l[b, c].cpu() + x_h[b, c].cpu())
-            axes[2].plot(xhat_l[b, c].detach().cpu() + xhat_h[b, c].detach().cpu())
-            axes[2].set_title('x')
+            axes[2].plot(x_l[b, c].cpu() + x_h[b, c].cpu(), alpha=alpha)
+            axes[2].plot(xhat_l[b, c].detach().cpu() + xhat_h[b, c].detach().cpu(), alpha=alpha)
+            axes[2].set_title(r'$x$ (LF+HF)')
             axes[2].set_ylim(-4, 4)
 
             plt.tight_layout()
-            wandb.log({"x vs xhat (val)": wandb.Image(plt)})
+            wandb.log({"x vs x_rec (val)": wandb.Image(plt)})
             plt.close()
 
         return recons_loss, vq_losses, perplexities
@@ -207,37 +197,3 @@ class ExpVQVAE(pl.LightningModule):
         opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['LR'])
         T_max = self.config['trainer_params']['max_steps']['stage1']
         return {'optimizer': opt, 'lr_scheduler': CosineAnnealingLR(opt, T_max, eta_min=1e-5)}
-
-    @torch.no_grad()
-    def test_step(self, batch, batch_idx):
-        self.eval()
-
-        x = batch
-        recons_loss, vq_losses, perplexities = self.forward(x)
-        loss = (recons_loss['LF.time'] + recons_loss['HF.time'] +
-                recons_loss['LF.timefreq'] + recons_loss['HF.timefreq']) + \
-                vq_losses['LF']['loss'] + vq_losses['HF']['loss'] + \
-                recons_loss['perceptual']
-
-        # log
-        loss_hist = {'loss': loss,
-                     'recons_loss.time': recons_loss['LF.time'] + recons_loss['HF.time'],
-                     'recons_loss.LF.time': recons_loss['LF.time'],
-                     'recons_loss.HF.time': recons_loss['HF.time'],
-
-                     'recons_loss.LF.timefreq': recons_loss['LF.timefreq'],
-                     'recons_loss.HF.timefreq': recons_loss['HF.timefreq'],
-
-                     'commit_loss.LF': vq_losses['LF']['commit_loss'],
-                     'commit_loss.HF': vq_losses['HF']['commit_loss'],
-                     'perplexity.LF': perplexities['LF'],
-                     'perplexity.HF': perplexities['HF'],
-
-                     'perceptual': recons_loss['perceptual']
-                     }
-        
-        # log
-        for k in loss_hist.keys():
-            self.log(f'test/{k}', loss_hist[k])
-
-        return loss_hist
