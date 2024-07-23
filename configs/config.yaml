@@ -37,12 +37,6 @@ VQ-VAE:
   codebook_sizes:
     lf: 32
     hf: 32
-  decay: 0.8
-  commitment_weight: 1.
-  codebook_dim: 128
-  kmeans_init: False
-  emb_dropout: 0.
-  perceptual_loss_weight: 0
 
 MaskGIT:
   choice_temperatures: # for masking

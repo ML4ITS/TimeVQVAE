@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+from utils import SnakeActivation
 
 
 class ResBlock(nn.Module):
@@ -18,11 +19,11 @@ class ResBlock(nn.Module):
         padding = (0, 1) if frequency_indepence else (1, 1)
 
         layers = [
-            nn.LeakyReLU(),
+            SnakeActivation(),
             nn.Conv2d(in_channels, mid_channels,
                       kernel_size=kernel_size, stride=(1, 1), padding=padding),
             nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(),
+            SnakeActivation(),
             nn.Conv2d(mid_channels, out_channels,
                       kernel_size=kernel_size, stride=(1, 1), padding=padding),
             nn.Dropout(dropout)
@@ -49,7 +50,7 @@ class VQVAEEncBlock(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding,
                       padding_mode='replicate'),
             nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(inplace=True),
+            SnakeActivation(),
             nn.Dropout(dropout))
 
     def forward(self, x):
@@ -72,7 +73,7 @@ class VQVAEDecBlock(nn.Module):
         self.block = nn.Sequential(
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
             nn.BatchNorm2d(out_channels),
-            nn.LeakyReLU(inplace=True),
+            SnakeActivation(),
             nn.Dropout(dropout))
 
     def forward(self, x):
