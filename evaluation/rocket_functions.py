@@ -15,6 +15,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from numba import njit, prange
+import torch.jit as jit
+
 
 @njit("Tuple((float64[:],int32[:],float64[:],int32[:],int32[:]))(int64,int64)")
 def generate_kernels(input_length, num_kernels):
@@ -114,7 +116,7 @@ def apply_kernels(X, kernels):
     return _X
 
 
-class MiniRocketTransform(nn.Module):
+class MiniRocketTransform(jit.ScriptModule):
     def __init__(self, input_length:int, num_features:int=10000):
         super(MiniRocketTransform, self).__init__()
         self.num_features = num_features
@@ -145,6 +147,7 @@ class MiniRocketTransform(nn.Module):
         return np.unique(dilations)
     
     @torch.no_grad()
+    @jit.script.method
     def forward(self, x, normalize=True):
         self.eval()
 
