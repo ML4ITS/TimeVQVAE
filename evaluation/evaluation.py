@@ -2,10 +2,7 @@
 FID, IS, JS divergence.
 """
 import os
-import copy
-import tempfile
-from pathlib import Path
-from typing import List
+from typing import List, Union
 
 import torch
 import torch.nn.functional as F
@@ -16,10 +13,10 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from experiments.exp_maskgit import ExpMaskGIT
+from experiments.exp_stage2 import ExpStage2
 from generators.maskgit import MaskGIT
 from preprocessing.data_pipeline import build_data_pipeline
-from preprocessing.preprocess_ucr import DatasetImporterUCR
+from preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 from generators.sample import unconditional_sample, conditional_sample
 from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN_2.example_compute_FID import calculate_fid
@@ -45,7 +42,9 @@ class Evaluation(nn.Module):
                  gpu_device_index:int, 
                  config:dict, 
                  use_fidelity_enhancer:bool=False,
-                 feature_extractor_type:str='supervised_fcn'
+                 feature_extractor_type:str='rocket',
+                 rocket_num_kernels:int=1000,
+                 use_custom_dataset:bool=False
                  ):
         super().__init__()
         self.subset_dataset_name = dataset_name = subset_dataset_name
@@ -55,29 +54,33 @@ class Evaluation(nn.Module):
         self.feature_extractor_type = feature_extractor_type
         assert feature_extractor_type in ['supervised_fcn', 'rocket'], 'unavailable feature extractor type.'
 
-        # load the pretrained FCN
-        self.fcn = load_pretrained_FCN(subset_dataset_name).to(gpu_device_index)
-        self.fcn.eval()
-
-        # load rocket (to extract unbiased representations)
-        self.rocket_kernels = generate_kernels(input_length, num_kernels=1000)
+        if not use_custom_dataset:
+            self.fcn = load_pretrained_FCN(subset_dataset_name).to(gpu_device_index)
+            self.fcn.eval()
+        if feature_extractor_type == 'rocket':
+            self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
 
         # load the numpy matrix of the test samples
-        dataset_importer = DatasetImporterUCR(subset_dataset_name, data_scaling=True)
-        self.X_test = dataset_importer.X_test[:, None, :]
-        self.X_train = dataset_importer.X_train[:, None, :]
+        dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True) if not use_custom_dataset else DatasetImporterCustom()
+        self.X_train = dataset_importer.X_train
+        self.X_test = dataset_importer.X_test
+        self.Y_train = dataset_importer.Y_train
+        self.Y_test = dataset_importer.Y_test
+
         self.ts_len = self.X_train.shape[-1]  # time series length
         self.n_classes = len(np.unique(dataset_importer.Y_train))
 
         # load the stage2 model
-        self.stage2 = ExpMaskGIT.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
+        self.stage2 = ExpStage2.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
                                                       dataset_name=dataset_name, 
                                                       input_length=input_length, 
                                                       config=config,
                                                       n_classes=n_classes,
                                                       use_fidelity_enhancer=False,
                                                       feature_extractor_type=feature_extractor_type,
-                                                      map_location='cpu')
+                                                      use_custom_dataset=use_custom_dataset,
+                                                      map_location='cpu',
+                                                      strict=False)
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit
         self.stage1 = self.stage2.maskgit.stage1
@@ -103,7 +106,7 @@ class Evaluation(nn.Module):
         self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
 
     @torch.no_grad()
-    def sample(self, n_samples: int, kind: str, class_index: int = -1):
+    def sample(self, n_samples: int, kind: str, class_index:Union[int,None]=None):
         assert kind in ['unconditional', 'conditional']
 
         # sampling
@@ -114,18 +117,18 @@ class Evaluation(nn.Module):
         else:
             raise ValueError
 
-        # domain shifter
+        # FE
         num_batches = x_new.shape[0] // self.batch_size + (1 if x_new.shape[0] % self.batch_size != 0 else 0)
-        X_new_fe = []
+        X_new_R = []
         for i in range(num_batches):
             start_idx = i * self.batch_size
             end_idx = start_idx + self.batch_size
             mini_batch = x_new[start_idx:end_idx]
-            x_new_fe = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
-            X_new_fe.append(x_new_fe)
-        X_new_fe = torch.cat(X_new_fe)
+            x_new_R = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
+            X_new_R.append(x_new_R)
+        X_new_R = torch.cat(X_new_R)
 
-        return (x_new_l, x_new_h, x_new), X_new_fe
+        return (x_new_l, x_new_h, x_new), X_new_R
 
     def _extract_feature_representations(self, x:np.ndarray):
         """
@@ -202,8 +205,8 @@ class Evaluation(nn.Module):
             tau = self.fidelity_enhancer.tau.item()
             _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
             _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
-            x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'LF')  # (b 1 l)
-            x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'HF')  # (b 1 l)
+            x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'lf')  # (b 1 l)
+            x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'hf')  # (b 1 l)
             x_a = x_a_l + x_a_h  # (b c l)
             x_a = x_a.cpu().numpy().astype(float)
             xs_a.append(x_a)

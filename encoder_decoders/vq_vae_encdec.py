@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils import SnakeActivation
+from utils import timefreq_to_time, time_to_timefreq, SnakeActivation, SnakyGELU
 
 
 class ResBlock(nn.Module):
@@ -19,19 +19,20 @@ class ResBlock(nn.Module):
         padding = (0, 1) if frequency_indepence else (1, 1)
 
         layers = [
-            SnakeActivation(),
+            SnakeActivation(in_channels, 2), #SnakyGELU(in_channels, 2), #SnakeActivation(in_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Conv2d(in_channels, mid_channels,
                       kernel_size=kernel_size, stride=(1, 1), padding=padding),
             nn.BatchNorm2d(out_channels),
-            SnakeActivation(),
+            SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Conv2d(mid_channels, out_channels,
                       kernel_size=kernel_size, stride=(1, 1), padding=padding),
             nn.Dropout(dropout)
         ]
         self.convs = nn.Sequential(*layers)
+        self.proj = nn.Identity() if in_channels == out_channels else nn.Conv2d(in_channels, out_channels, kernel_size=1)
 
     def forward(self, x):
-        return x + self.convs(x)
+        return self.proj(x) + self.convs(x)
 
 
 class VQVAEEncBlock(nn.Module):
@@ -50,7 +51,7 @@ class VQVAEEncBlock(nn.Module):
             nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding,
                       padding_mode='replicate'),
             nn.BatchNorm2d(out_channels),
-            SnakeActivation(),
+            SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Dropout(dropout))
 
     def forward(self, x):
@@ -73,7 +74,7 @@ class VQVAEDecBlock(nn.Module):
         self.block = nn.Sequential(
             nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
             nn.BatchNorm2d(out_channels),
-            SnakeActivation(),
+            SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Dropout(dropout))
 
     def forward(self, x):
@@ -87,10 +88,12 @@ class VQVAEEncoder(nn.Module):
     """
 
     def __init__(self,
-                 d: int,
+                 dim: int,
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
+                 pad_func,
+                 n_fft:int,
                  frequency_indepence:bool,
                  dropout:float=0.3,
                  **kwargs):
@@ -103,22 +106,34 @@ class VQVAEEncoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
-        self.encoder = nn.Sequential(
-            VQVAEEncBlock(num_channels, d, frequency_indepence),
-            *[nn.Sequential(VQVAEEncBlock(d, d, frequency_indepence, dropout=dropout), *[ResBlock(d, d, frequency_indepence, dropout=dropout) for _ in range(n_resnet_blocks)]) for _ in range(int(np.log2(downsample_rate)) - 1)]
-        )
+        self.pad_func = pad_func
+        self.n_fft = n_fft
+
+        d = 4
+        enc_layers = [VQVAEEncBlock(num_channels, d, frequency_indepence),]
+        d *= 2
+        for _ in range(int(round(np.log2(downsample_rate))) - 1):
+            enc_layers.append(VQVAEEncBlock(d//2, d, frequency_indepence))
+            for _ in range(n_resnet_blocks):
+                enc_layers.append(ResBlock(d, d, frequency_indepence, dropout=dropout))
+            d *= 2
+        enc_layers.append(ResBlock(d//2, dim, frequency_indepence, dropout=dropout))
+        self.encoder = nn.Sequential(*enc_layers)
 
         self.is_num_tokens_updated = False
         self.register_buffer('num_tokens', torch.zeros(1).int())
         self.register_buffer('H_prime', torch.zeros(1).int())
         self.register_buffer('W_prime', torch.zeros(1).int())
-
+    
     def forward(self, x):
         """
-        :param x: (B, C, H, W)
-        :return (B, C, H, W') where W' <= W
+        :param x: (b c l)
         """
-        out = self.encoder(x)
+        in_channels = x.shape[1]
+        x = time_to_timefreq(x, self.n_fft, in_channels)  # (b c h w)
+        x = self.pad_func(x, copy=True)   # (b c h w)
+
+        out = self.encoder(x)  # (b c h w)
         if not self.is_num_tokens_updated:
             self.H_prime += out.shape[2]
             self.W_prime += out.shape[3]
@@ -133,10 +148,14 @@ class VQVAEDecoder(nn.Module):
     """
 
     def __init__(self,
-                 d: int,
+                 dim: int,
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
+                 input_length:int,
+                 pad_func,
+                 n_fft:int,
+                 x_channels:int,
                  frequency_indepence:bool,
                  dropout:float=0.3,
                  **kwargs):
@@ -148,49 +167,48 @@ class VQVAEDecoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
+        self.pad_func = pad_func
+        self.n_fft = n_fft
+        self.x_channels = x_channels
         
         kernel_size = (1, 4) if frequency_indepence else (3, 4)
         padding = (0, 1) if frequency_indepence else (1, 1)
         
-        self.decoder = nn.Sequential(
-            *[nn.Sequential(ResBlock(d, d, frequency_indepence, dropout=dropout), *[VQVAEDecBlock(d, d, frequency_indepence, dropout=dropout) for _ in range(int(np.log2(downsample_rate)) - 1)]) for _ in range(n_resnet_blocks)],
-            # *[VQVAEDecBlock(d, d) for _ in range(int(np.log2(downsample_rate)) - 1)],
-            nn.ConvTranspose2d(d, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
-            nn.ConvTranspose2d(num_channels, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),  # one more upsampling layer is added not to miss reconstruction details
-        )
+        d = int(4 * 2**(int(round(np.log2(downsample_rate))) - 1))  # enc_out_dim == dec_in_dim
+        if round(np.log2(downsample_rate)) == 0:
+            d = int(4 * 2**(int(round(np.log2(downsample_rate)))))
+        
+        dec_layers = [ResBlock(dim, d, frequency_indepence, dropout=dropout)]
+        for _ in range(int(round(np.log2(downsample_rate))) - 1):
+            for _ in range(n_resnet_blocks):
+                dec_layers.append(ResBlock(d, d, frequency_indepence, dropout=dropout))
+            d //= 2
+            dec_layers.append(VQVAEDecBlock(2*d, d, frequency_indepence))
+        dec_layers.append(nn.ConvTranspose2d(d, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding))
+        dec_layers.append(nn.ConvTranspose2d(num_channels, num_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding))
+        self.decoder = nn.Sequential(*dec_layers)
 
-        self.is_upsample_size_updated = False
-        self.register_buffer("upsample_size", torch.zeros(2))
-
-    def register_upsample_size(self, hw: torch.IntTensor):
-        """
-        :param hw: (height H, width W) of input
-        """
-        self.upsample_size = hw
-        self.is_upsample_size_updated = True
+        self.interp = nn.Upsample(input_length, mode='linear')
+        self.linear = nn.Linear(input_length, input_length)
+        
 
     def forward(self, x):
-        """
-        :param x: output from the encoder (B, C, H, W')
-        :return  (B, C, H, W)
-        """
-        out = self.decoder(x)
-        if isinstance(self.upsample_size, torch.Tensor):
-            upsample_size = self.upsample_size.cpu().numpy().astype(int)
-            upsample_size = [*upsample_size]
-            out = F.interpolate(out, size=upsample_size, mode='bilinear', align_corners=True)
-            return out
-        else:
-            raise ValueError('self.upsample_size is not yet registered.')
+        out = self.decoder(x)  # (b c h w)
+        out = self.pad_func(out)  # (b c h w)
+        out = timefreq_to_time(out, self.n_fft, self.x_channels)  # (b c l)
 
+        out = self.interp(out)  # (b c l)
+        out = out + self.linear(out)  # (b c l)
+        return out
+        
 
 if __name__ == '__main__':
     import numpy as np
 
     x = torch.rand(1, 2, 4, 128)  # (batch, channels, height, width)
 
-    encoder = VQVAEEncoder(d=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
-    decoder = VQVAEDecoder(d=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
+    encoder = VQVAEEncoder(dim=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
+    decoder = VQVAEDecoder(dim=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
     decoder.upsample_size = torch.IntTensor(np.array(x.shape[2:]))
 
     z = encoder(x)

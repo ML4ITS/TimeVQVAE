@@ -4,7 +4,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import math
 from pathlib import Path
 import tempfile
 from typing import Union
@@ -14,11 +13,11 @@ from einops import repeat, rearrange
 from typing import Callable
 from generators.bidirectional_transformer import BidirectionalTransformer
 
-from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
+from encoder_decoders.vq_vae_encdec import VQVAEEncoder
 from vector_quantization.vq import VectorQuantize
 
-from experiments.exp_vq_vae import ExpVQVAE
-from utils import compute_downsample_rate, get_root_dir, freeze, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
+from experiments.exp_stage1 import ExpStage1
+from utils import freeze, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
 
 
 class MaskGIT(nn.Module):
@@ -30,7 +29,7 @@ class MaskGIT(nn.Module):
                  dataset_name: str,
                  input_length: int,
                  choice_temperatures: dict,
-                 T: int,
+                 T: dict,
                  config: dict,
                  n_classes: int,
                  **kwargs):
@@ -40,21 +39,19 @@ class MaskGIT(nn.Module):
         self.T = T
         self.config = config
         self.n_classes = n_classes
+        self.n_fft = config['VQ-VAE']['n_fft']
+        self.cfg_scale = config['MaskGIT']['cfg_scale']
 
-        self.mask_token_ids = {'LF': config['VQ-VAE']['codebook_sizes']['lf'], 'HF': config['VQ-VAE']['codebook_sizes']['hf']}
+        self.mask_token_ids = {'lf': config['VQ-VAE']['codebook_sizes']['lf'], 'hf': config['VQ-VAE']['codebook_sizes']['hf']}
         self.gamma = self.gamma_func("cosine")
 
         # load the staeg1 model
-        self.stage1 = ExpVQVAE.load_from_checkpoint(os.path.join('saved_models', f'stage1-{dataset_name}.ckpt'), 
-                                                    dataset_name=dataset_name, 
-                                                    input_length=input_length, 
-                                                    n_classes=n_classes,
-                                                    config=config,
-                                                    map_location='cpu')
+        self.stage1 = ExpStage1.load_from_checkpoint(os.path.join('saved_models', f'stage1-{dataset_name}.ckpt'), 
+                                                     input_length=input_length, 
+                                                     config=config,
+                                                     map_location='cpu')
         freeze(self.stage1)
         self.stage1.eval()
-
-        self.n_fft = config['VQ-VAE']['n_fft']
 
         self.encoder_l = self.stage1.encoder_l
         self.decoder_l = self.stage1.decoder_l
@@ -71,28 +68,22 @@ class MaskGIT(nn.Module):
         self.H_prime_l, self.H_prime_h = self.encoder_l.H_prime.item(), self.encoder_h.H_prime.item()
         self.W_prime_l, self.W_prime_h = self.encoder_l.W_prime.item(), self.encoder_h.W_prime.item()
 
-        # pretrained discrete tokens
-        embed_l = nn.Parameter(copy.deepcopy(self.vq_model_l._codebook.embed))  # pretrained discrete tokens (LF)
-        embed_h = nn.Parameter(copy.deepcopy(self.vq_model_h._codebook.embed))  # pretrained discrete tokens (HF)
-
-        # transformers
-        self.transformer_l = BidirectionalTransformer('LF',
+        # transformers / prior models
+        emb_dim = self.config['encoder']['dim']
+        self.transformer_l = BidirectionalTransformer('lf',
                                                       self.num_tokens_l,
                                                       config['VQ-VAE']['codebook_sizes'],
-                                                      config['VQ-VAE']['codebook_dim'],
+                                                      emb_dim,
                                                       **config['MaskGIT']['prior_model_l'],
                                                       n_classes=n_classes,
-                                                    #   pretrained_tok_emb_l=embed_l,  # loading it poses restraining bias, hindering the training
                                                       )
 
-        self.transformer_h = BidirectionalTransformer('HF',
+        self.transformer_h = BidirectionalTransformer('hf',
                                                       self.num_tokens_h,
                                                       config['VQ-VAE']['codebook_sizes'],
-                                                      config['VQ-VAE']['codebook_dim'],
+                                                      emb_dim,
                                                       **config['MaskGIT']['prior_model_h'],
                                                       n_classes=n_classes,
-                                                    #   pretrained_tok_emb_l=embed_l,  # loading it poses restraining bias, hindering the training
-                                                    #   pretrained_tok_emb_h=embed_h,  # loading it poses restraining bias, hindering the training
                                                       num_tokens_l=self.num_tokens_l,
                                                       )
 
@@ -110,15 +101,39 @@ class MaskGIT(nn.Module):
     @torch.no_grad()
     def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None, svq_temp:Union[float,None]=None):
         """
-        x: (B, C, L)
+        encode x to zq
+
+        x: (b c l)
         """
-        C = x.shape[1]
-        xf = time_to_timefreq(x, self.n_fft, C)  # (B, C, H, W)
-        if spectrogram_padding is not None:
-            xf = spectrogram_padding(xf)
-        z = encoder(xf)  # (b c h w)
-        z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
-        return z_q, indices
+        # C = x.shape[1]
+        # xf = time_to_timefreq(x, self.n_fft, C)  # (B, C, H, W)
+        # if spectrogram_padding is not None:
+        #     xf = spectrogram_padding(xf)
+        # z = encoder(xf)  # (b c h w)
+        # z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
+        # return z_q, indices
+        z = encoder(x)
+        zq, s, _, _ = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
+        return zq, s
+    
+    def masked_prediction(self, transformer, class_condition, *s_in):
+        """
+        masked prediction with classifier-free guidance
+        """
+        if isinstance(class_condition, type(None)):
+            # unconditional 
+            logits_null = transformer(*s_in, class_condition=None)  # (b n k)
+            return logits_null
+        else:
+            # class-conditional
+            if self.cfg_scale == 1.0:
+                logits = transformer(*s_in, class_condition=class_condition)  # (b n k)
+            else:
+                # with CFG
+                logits_null = transformer(*s_in, class_condition=None)
+                logits = transformer(*s_in, class_condition=class_condition)  # (b n k)
+                logits = logits_null + self.cfg_scale * (logits - logits_null)
+            return logits
 
     def forward(self, x, y):
         """
@@ -136,15 +151,12 @@ class MaskGIT(nn.Module):
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
 
         # mask tokens
-        s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['LF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
-        s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['HF'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+        s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['lf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+        s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['hf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
 
         # prediction
-        logits_l = self.transformer_l(s_l_M.detach(), class_condition=y)  # (b n codebook_size)
-        target_l = s_l  # (b n)
-
-        logits_h = self.transformer_h(s_l.detach(), s_h_M.detach(), class_condition=y)  # (b m codebook_size)
-        target_h = s_h  # (b m)
+        logits_l = self.masked_prediction(self.transformer_l, y, s_l_M)  # (b n k)
+        logits_h = self.masked_prediction(self.transformer_h, y, s_l_M, s_h_M)
         
         # maksed prediction loss
         logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
@@ -255,20 +267,17 @@ class MaskGIT(nn.Module):
                    s_l: torch.Tensor,
                    unknown_number_in_the_beginning_l,
                    class_condition: Union[torch.Tensor, None],
-                   guidance_scale: float,
                    gamma: Callable,
                    device):
-        for t in range(self.T):
-            logits_l = self.transformer_l(s_l, class_condition=class_condition)  # (b n codebook_size) == (b n K)
-            if isinstance(class_condition, torch.Tensor):
-                logits_l_null = self.transformer_l(s_l, class_condition=None)
-                logits_l = logits_l_null + guidance_scale * (logits_l - logits_l_null)
+        for t in range(self.T['lf']):
+            logits_l = self.masked_prediction(self.transformer_l, class_condition, s_l)  # (b n k)
+
             sampled_ids = torch.distributions.categorical.Categorical(logits=logits_l).sample()  # (b n)
-            unknown_map = (s_l == self.mask_token_ids['LF'])  # which tokens need to be sampled; (b n)
+            unknown_map = (s_l == self.mask_token_ids['lf'])  # which tokens need to be sampled; (b n)
             sampled_ids = torch.where(unknown_map, sampled_ids, s_l)  # keep the previously-sampled tokens; (b n)
 
             # create masking according to `t`
-            ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
+            ratio = 1. * (t + 1) / self.T['lf']  # just a percentage e.g. 1 / 12
             mask_ratio = gamma(ratio)
 
             probs = F.softmax(logits_l, dim=-1)  # convert logits into probs; (b n K)
@@ -283,14 +292,14 @@ class MaskGIT(nn.Module):
             masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature_l * (1. - ratio), device=device)
 
             # Masks tokens with lower confidence.
-            s_l = torch.where(masking, self.mask_token_ids['LF'], sampled_ids)  # (b n)
+            s_l = torch.where(masking, self.mask_token_ids['lf'], sampled_ids)  # (b n)
 
-        # use ESS (Enhanced Sampling Scheme)
-        if self.config['MaskGIT']['ESS']['use']:
-            t_star, s_star = self.critical_reverse_sampling(s_l, unknown_number_in_the_beginning_l, class_condition, 'LF')
-            s_l = self.iterative_decoding_with_self_token_critic(t_star, s_star, 'LF',
-                                                                 unknown_number_in_the_beginning_l, class_condition,
-                                                                 guidance_scale, device)
+        # # use ESS (Enhanced Sampling Scheme)
+        # if self.config['MaskGIT']['ESS']['use']:
+        #     t_star, s_star = self.critical_reverse_sampling(s_l, unknown_number_in_the_beginning_l, class_condition, 'lf')
+        #     s_l = self.iterative_decoding_with_self_token_critic(t_star, s_star, 'lf',
+        #                                                          unknown_number_in_the_beginning_l, class_condition, 
+        #                                                          device)
 
         return s_l
 
@@ -299,20 +308,17 @@ class MaskGIT(nn.Module):
                     s_h: torch.Tensor,
                     unknown_number_in_the_beginning_h,
                     class_condition: Union[torch.Tensor, None],
-                    guidance_scale: float,
                     gamma: Callable,
                     device):
-        for t in range(self.T):
-            logits_h = self.transformer_h(s_l, s_h, class_condition=class_condition)  # (b m codebook_size) == (b m K)
-            if isinstance(class_condition, torch.Tensor) and (guidance_scale > 1):
-                logits_h_null = self.transformer_h(s_l, s_h, class_condition=None)
-                logits_h = logits_h_null + guidance_scale * (logits_h - logits_h_null)
+        for t in range(self.T['hf']):
+            logits_h = self.masked_prediction(self.transformer_h, class_condition, s_l, s_h)  # (b m k)
+
             sampled_ids = torch.distributions.categorical.Categorical(logits=logits_h).sample()  # (b m)
-            unknown_map = (s_h == self.mask_token_ids['HF'])  # which tokens need to be sampled; (b m)
+            unknown_map = (s_h == self.mask_token_ids['hf'])  # which tokens need to be sampled; (b m)
             sampled_ids = torch.where(unknown_map, sampled_ids, s_h)  # keep the previously-sampled tokens; (b m)
 
             # create masking according to `t`
-            ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
+            ratio = 1. * (t + 1) / self.T['hf']  # just a percentage e.g. 1 / 12
             mask_ratio = gamma(ratio)
 
             probs = F.softmax(logits_h, dim=-1)  # convert logits into probs; (b m K)
@@ -327,26 +333,26 @@ class MaskGIT(nn.Module):
             masking = self.mask_by_random_topk(mask_len, selected_probs, temperature=self.choice_temperature_h * (1. - ratio), device=device)
 
             # Masks tokens with lower confidence.
-            s_h = torch.where(masking, self.mask_token_ids['HF'], sampled_ids)  # (b n)
+            s_h = torch.where(masking, self.mask_token_ids['hf'], sampled_ids)  # (b n)
         return s_h
 
     @torch.no_grad()
-    def iterative_decoding(self, num=1, mode="cosine", class_index=None, device='cpu', guidance_scale: float = 1.):
+    def iterative_decoding(self, num=1, mode="cosine", class_index=None, device='cpu'):
         """
         It performs the iterative decoding and samples token indices for LF and HF.
         :param num: number of samples
         :return: sampled token indices for LF and HF
         """
-        s_l = self.create_input_tokens_normal(num, self.num_tokens_l, self.mask_token_ids['LF'], device)  # (b n)
-        s_h = self.create_input_tokens_normal(num, self.num_tokens_h, self.mask_token_ids['HF'], device)  # (b n)
+        s_l = self.create_input_tokens_normal(num, self.num_tokens_l, self.mask_token_ids['lf'], device)  # (b n)
+        s_h = self.create_input_tokens_normal(num, self.num_tokens_h, self.mask_token_ids['hf'], device)  # (b n)
 
-        unknown_number_in_the_beginning_l = torch.sum(s_l == self.mask_token_ids['LF'], dim=-1)  # (b,)
-        unknown_number_in_the_beginning_h = torch.sum(s_h == self.mask_token_ids['HF'], dim=-1)  # (b,)
+        unknown_number_in_the_beginning_l = torch.sum(s_l == self.mask_token_ids['lf'], dim=-1)  # (b,)
+        unknown_number_in_the_beginning_h = torch.sum(s_h == self.mask_token_ids['hf'], dim=-1)  # (b,)
         gamma = self.gamma_func(mode)
         class_condition = repeat(torch.Tensor([class_index]).int().to(device), 'i -> b i', b=num) if class_index != None else None  # (b 1)
 
-        s_l = self.first_pass(s_l, unknown_number_in_the_beginning_l, class_condition, guidance_scale, gamma, device)
-        s_h = self.second_pass(s_l, s_h, unknown_number_in_the_beginning_h, class_condition, guidance_scale, gamma, device)
+        s_l = self.first_pass(s_l, unknown_number_in_the_beginning_l, class_condition, gamma, device)
+        s_h = self.second_pass(s_l, s_h, unknown_number_in_the_beginning_h, class_condition, gamma, device)
         return s_l, s_h
 
     def decode_token_ind_to_timeseries(self, s: torch.Tensor, frequency: str, return_representations: bool = False):
@@ -357,26 +363,24 @@ class MaskGIT(nn.Module):
         :param return_representations:
         :return:
         """
-        assert frequency in ['LF', 'HF']
+        frequency = frequency.lower()
+        assert frequency in ['lf', 'hf']
 
-        vq_model = self.vq_model_l if frequency == 'LF' else self.vq_model_h
-        decoder = self.decoder_l if frequency == 'LF' else self.decoder_h
-        zero_pad = zero_pad_high_freq if frequency == 'LF' else zero_pad_low_freq
+        vq_model = self.vq_model_l if frequency == 'lf' else self.vq_model_h
+        decoder = self.decoder_l if frequency == 'lf' else self.decoder_h
+        zero_pad = zero_pad_high_freq if frequency == 'lf' else zero_pad_low_freq
 
-        quantize = F.embedding(s, vq_model._codebook.embed)  # (b n d)
-        quantize = vq_model.project_out(quantize)  # (b n c)
-        quantize = rearrange(quantize, 'b n c -> b c n')  # (b c n) == (b c (h w))
-        H_prime = self.H_prime_l if frequency == 'LF' else self.H_prime_h
-        W_prime = self.W_prime_l if frequency == 'LF' else self.W_prime_h
-        quantize = rearrange(quantize, 'b c (h w) -> b c h w', h=H_prime, w=W_prime)
+        zq = F.embedding(s, vq_model._codebook.embed)  # (b n d)
+        zq = vq_model.project_out(zq)  # (b n c)
+        zq = rearrange(zq, 'b n c -> b c n')  # (b c n) == (b c (h w))
+        H_prime = self.H_prime_l if frequency == 'lf' else self.H_prime_h
+        W_prime = self.W_prime_l if frequency == 'lf' else self.W_prime_h
+        zq = rearrange(zq, 'b c (h w) -> b c h w', h=H_prime, w=W_prime)
 
-        xfhat = decoder(quantize)
-
-        uhat = zero_pad(xfhat)
-        xhat = timefreq_to_time(uhat, self.n_fft, self.config['dataset']['in_channels'])  # (B, C, L)
+        xhat = decoder(zq)
 
         if return_representations:
-            return xhat, quantize
+            return xhat, zq
         else:
             return xhat
 
@@ -389,12 +393,12 @@ class MaskGIT(nn.Module):
         """
         s: sampled token sequence from the naive iterative decoding.
         """
-        if kind == 'LF':
-            mask_token_ids = self.mask_token_ids['LF']
+        if kind == 'lf':
+            mask_token_ids = self.mask_token_ids['lf']
             transformer = self.transformer_l
             vq_model = self.vq_model_l
-        elif kind == 'HF':
-            mask_token_ids = self.mask_token_ids['HF']
+        elif kind == 'hf':
+            mask_token_ids = self.mask_token_ids['hf']
             transformer = self.transformer_h
             vq_model = self.vq_model_h
         else:
@@ -409,11 +413,11 @@ class MaskGIT(nn.Module):
         t_star = 1
         s_star = None
         prev_error = None
-        error_ratio_hist = deque(maxlen=round(self.T * self.config['MaskGIT']['ESS']['error_ratio_ma_rate']))
-        for t in range(1, self.T)[::-1]:
+        error_ratio_hist = deque(maxlen=round(self.T[kind] * self.config['MaskGIT']['ESS']['error_ratio_ma_rate']))
+        for t in range(1, self.T[kind])[::-1]:
             # masking ratio according to the masking scheduler
-            ratio_t = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
-            ratio_tm1 = 1. * t / self.T  # tm1: t - 1
+            ratio_t = 1. * (t + 1) / self.T[kind]  # just a percentage e.g. 1 / 12
+            ratio_tm1 = 1. * t / self.T[kind]  # tm1: t - 1
             mask_ratio_t = self.gamma(ratio_t)
             mask_ratio_tm1 = self.gamma(ratio_tm1)  # tm1: t - 1
 
@@ -435,7 +439,8 @@ class MaskGIT(nn.Module):
 
             # predict s_t given s_{t-1}
             s_tm1 = torch.where(masking_tm1, mask_token_ids, s)  # (b n)
-            logits = transformer(s_tm1, class_condition=class_condition)  # (b n K)
+            logits = self.masked_prediction(transformer, class_condition, s_tm1)  # (b m k)
+            
             s_t_hat = logits.argmax(dim=-1)  # (b n)
 
             # leave the tokens of interest -- i.e., ds/dt -- only at t
@@ -448,7 +453,7 @@ class MaskGIT(nn.Module):
             error = ((z_q_t - z_q_t_hat) ** 2).mean().cpu().detach().item()
 
             # error ratio
-            if t + 1 == self.T:
+            if t + 1 == self.T[kind]:
                 error_ratio_ma = 0.
                 prev_error = error
             else:
@@ -460,7 +465,7 @@ class MaskGIT(nn.Module):
 
             # stopping criteria
             stopping_threshold = 1.0
-            if error_ratio_ma > stopping_threshold and (t + 1 != self.T):
+            if error_ratio_ma > stopping_threshold and (t + 1 != self.T['lf']):
                 t_star = t
                 s_star = torch.where(masking_t, mask_token_ids, s)  # (b n)
                 print('stopped by `error_ratio_ma > threshold`.')
@@ -479,16 +484,15 @@ class MaskGIT(nn.Module):
                                                   kind: str,
                                                   unknown_number_in_the_beginning,
                                                   class_condition: Union[torch.Tensor, None],
-                                                  guidance_scale: float,
                                                   device,
                                                   ):
-        if kind == 'LF':
-            mask_token_ids = self.mask_token_ids['LF']
+        if kind == 'lf':
+            mask_token_ids = self.mask_token_ids['lf']
             transformer = self.transformer_l
             vq_model = self.vq_model_l
             choice_temperature = self.choice_temperature_l
-        elif kind == 'HF':
-            mask_token_ids = self.mask_token_ids['HF']
+        elif kind == 'hf':
+            mask_token_ids = self.mask_token_ids['hf']
             transformer = self.transformer_h
             vq_model = self.vq_model_h
             choice_temperature = self.choice_temperature_h
@@ -496,15 +500,13 @@ class MaskGIT(nn.Module):
             raise ValueError
 
         s = s_star
-        for t in range(t_star, self.T):
-            logits = transformer(s, class_condition=class_condition)  # (b n codebook_size) == (b n K)
-            if isinstance(class_condition, torch.Tensor):
-                logits_null = transformer(s, class_condition=None)
-                logits = logits_null + guidance_scale * (logits - logits_null)
+        for t in range(t_star, self.T[kind]):
+            logits = self.masked_prediction(transformer, class_condition, s)
+
             sampled_ids = torch.distributions.categorical.Categorical(logits=logits).sample()  # (b n)
 
             # create masking according to `t`
-            ratio = 1. * (t + 1) / self.T  # just a percentage e.g. 1 / 12
+            ratio = 1. * (t + 1) / self.T[kind]  # just a percentage e.g. 1 / 12
             mask_ratio = self.gamma(ratio)
 
             # compute the confidence scores for s_t
@@ -525,7 +527,7 @@ class MaskGIT(nn.Module):
         for n in range(confidence_scores.shape[-1]):
             s_m = copy.deepcopy(s)  # (b n)
             s_m[:, n] = mask_token_ids  # (b n); masking the n-th token to measure the confidence score for that token.
-            logits = transformer(s_m, class_condition=class_condition)  # (b n K)
+            logits = self.masked_prediction(transformer, class_condition, s_m)  # (b n k)
             logits = torch.nn.functional.softmax(logits, dim=-1)  # (b n K)
 
             true_tokens = s[:, n]  # (b,)

@@ -8,19 +8,6 @@ from einops import repeat, rearrange
 from x_transformers import ContinuousTransformerWrapper, Encoder as TFEncoder
 
 
-def load_pretrained_tok_emb(pretrained_tok_emb, tok_emb, freeze_pretrained_tokens: bool):
-    """
-    :param pretrained_tok_emb: pretrained token embedding from stage 1
-    :param tok_emb: token embedding of the transformer
-    :return:
-    """
-    with torch.no_grad():
-        if pretrained_tok_emb != None:
-            tok_emb.weight[:-1, :] = pretrained_tok_emb
-            if freeze_pretrained_tokens:
-                tok_emb.weight[:-1, :].requires_grad = False
-
-
 class Upscale(nn.Module):
     def __init__(self, in_channels:int, out_channels:int, h_dim:int) -> None:
         super().__init__()
@@ -54,9 +41,6 @@ class BidirectionalTransformer(nn.Module):
                  use_rmsnorm: bool,
                  p_unconditional: float,
                  n_classes: int,
-                 pretrained_tok_emb_l: nn.Parameter = None,
-                 pretrained_tok_emb_h: nn.Parameter = None,
-                 freeze_pretrained_tokens: bool = False,
                  model_dropout:float=0.3,
                  emb_dropout:float=0.3,
                  **kwargs):
@@ -72,28 +56,24 @@ class BidirectionalTransformer(nn.Module):
         :param use_rmsnorm:
         :param p_unconditional:
         :param n_classes:
-        :param pretrained_tok_emb_l: if given, the embedding of the transformer is initialized with the pretrained embedding from stage 1; low-frequency
-        :param pretrained_tok_emb_h: if given, the embedding of the transformer is initialized with the pretrained embedding from stage 1; high-frequency
-        :param freeze_pretrained_tokens:
         :param num_tokens_l:
         :param kwargs:
         """
         super().__init__()
-        assert kind in ['LF', 'HF']
+        kind = kind.lower()
+        assert kind in ['lf', 'hf'], 'invalid `kind`.'
         self.kind = kind
         self.num_tokens = num_tokens
         self.n_classes = n_classes
         self.p_unconditional = p_unconditional
-        in_dim = embed_dim if kind == 'LF' else 2 * embed_dim
+        in_dim = embed_dim if kind == 'lf' else 2 * embed_dim
         out_dim = embed_dim
         self.emb_dropout = emb_dropout
 
         # token embeddings
         self.tok_emb_l = nn.Embedding(codebook_sizes['lf'] + 1, embed_dim)  # `+1` is for mask-token
-        load_pretrained_tok_emb(pretrained_tok_emb_l, self.tok_emb_l, freeze_pretrained_tokens)
-        if kind == 'HF':
+        if kind == 'hf':
             self.tok_emb_h = nn.Embedding(codebook_sizes['hf'] + 1, embed_dim)  # `+1` is for mask-token
-            load_pretrained_tok_emb(pretrained_tok_emb_h, self.tok_emb_h, freeze_pretrained_tokens)
 
         # transformer
         self.pos_emb = nn.Embedding(self.num_tokens + 1, in_dim)
@@ -115,30 +95,32 @@ class BidirectionalTransformer(nn.Module):
                                                        attn_dropout=model_dropout, 
                                                        ff_dropout=model_dropout,
                                                    ))
-        self.Token_Prediction = nn.Sequential(*[
+        self.pred_head = nn.Sequential(*[
             nn.Linear(in_features=in_dim, out_features=out_dim),
             nn.GELU(),
             nn.LayerNorm(out_dim, eps=1e-12)
         ])
-        codebook_size = codebook_sizes['lf'] if kind == 'LF' else codebook_sizes['hf']
+        codebook_size = codebook_sizes['lf'] if kind == 'lf' else codebook_sizes['hf']
         self.bias = nn.Parameter(torch.zeros(self.num_tokens, codebook_size + 1))
 
-        if kind == 'HF':
-            # self.projector = nn.Conv1d(num_tokens_l, self.num_tokens, kernel_size=1)
+        if kind == 'hf':
             self.projector = Upscale(embed_dim, embed_dim, 2*embed_dim)
 
     def class_embedding(self, class_condition: Union[None, torch.Tensor], batch_size: int, device):
-        if isinstance(class_condition, torch.Tensor):
-            # if condition is given (conditional sampling)
-            conditional_ind = torch.rand(class_condition.shape).to(device) > self.p_unconditional
+        cond_type = 'uncond' if isinstance(class_condition, type(None)) else 'class-cond'
+
+        if cond_type == 'uncond':
             class_uncondition = repeat(torch.Tensor([self.n_classes]).long().to(device), 'i -> b i', b=batch_size)  # (b 1)
-            class_condition = torch.where(conditional_ind, class_condition.long(), class_uncondition)  # (b 1)
-        else:
-            # if condition is not given (unconditional sampling)
-            class_uncondition = repeat(torch.Tensor([self.n_classes]).long().to(device), 'i -> b i', b=batch_size)  # (b 1)
-            class_condition = class_uncondition
-        cls_emb = self.class_condition_emb(class_condition)  # (b 1 dim)
-        return cls_emb
+            cls_emb = self.class_condition_emb(class_uncondition)  # (b 1 dim)
+            return cls_emb
+        elif cond_type == 'class-cond':
+            if self.training:
+                ind = torch.rand(class_condition.shape).to(device) > self.p_unconditional  # to enable classifier-free guidance
+            else:
+                ind = torch.ones_like(class_condition, dtype=torch.bool).to(device)
+            class_condition = torch.where(ind, class_condition.long(), self.n_classes)  # (b 1)
+            cls_emb = self.class_condition_emb(class_condition)  # (b 1 dim)
+            return cls_emb
 
     def forward_lf(self, embed_ind_l, class_condition: Union[None, torch.Tensor] = None):
         device = embed_ind_l.device
@@ -153,7 +135,7 @@ class BidirectionalTransformer(nn.Module):
         embed = token_embeddings + position_embeddings  # (b, n, dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
         embed = self.blocks(embed)  # (b, 1+n, dim)
-        embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, n, dim)
+        embed = self.pred_head(embed)[:, 1:, :]  # (b, n, dim)
 
         logits = torch.matmul(embed, self.tok_emb_l.weight.T) + self.bias  # (b, n, codebook_size+1)
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
@@ -183,7 +165,7 @@ class BidirectionalTransformer(nn.Module):
         embed = token_embeddings + position_embeddings
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
         embed = self.blocks(embed)  # (b, 1+m, 2*dim)
-        embed = self.Token_Prediction(embed)[:, 1:, :]  # (b, m, dim)
+        embed = self.pred_head(embed)[:, 1:, :]  # (b, m, dim)
 
         logits = torch.matmul(embed, self.tok_emb_h.weight.T) + self.bias  # (b, m, codebook_size+1)
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, m, codebook_size)
@@ -194,9 +176,9 @@ class BidirectionalTransformer(nn.Module):
         embed_ind: indices for embedding; (b n)
         class_condition: (b 1); if None, unconditional sampling is operated.
         """
-        if self.kind == 'LF':
+        if self.kind == 'lf':
             logits = self.forward_lf(embed_ind_l, class_condition)
-        elif self.kind == 'HF':
+        elif self.kind == 'hf':
             logits = self.forward_hf(embed_ind_l, embed_ind_h, class_condition)
         else:
             raise ValueError
