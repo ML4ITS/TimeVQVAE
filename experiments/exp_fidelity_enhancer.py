@@ -46,7 +46,6 @@ class ExpFidelityEnhancer(pl.LightningModule):
                               }
         ckpt_fname = os.path.join('saved_models', f'stage2-{dataset_name}.ckpt')
         stage2 = ExpStage2.load_from_checkpoint(ckpt_fname, **exp_maskgit_config, map_location='cpu')
-        self.is_pretrained_maskgit_used = True
         print('\nThe pretrained ExpStage2 is loaded.\n')
         freeze(stage2)
         stage2.eval()
@@ -209,7 +208,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             self.log(f'val/{k}', loss_hist[k])
 
         # maskgit sampling
-        if batch_idx == 0 and self.is_pretrained_maskgit_used:
+        if batch_idx == 0:
             class_index = None
 
             # unconditional sampling

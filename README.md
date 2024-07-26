@@ -75,6 +75,7 @@ python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
 ```
 
 ### Evaluation
+FID, IS, visual inspection between $p(X)$ and $p_\theta(\hat{X})$ with the corresponding comparison in an evaluation latent space.
 ```commandline
 python evaluate.py --dataset_names FordA --gpu_device_idx 0
 ```
@@ -95,7 +96,7 @@ python stage1.py --use_custom_dataset True --dataset_names custom --gpu_device_i
 ```commandline
 python stage2.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
 ```
-After stage 1 and 2, you can sample synthetic time series on `custom_dataset_sampling.ipynb`.
+After stage 1 and 2, you can sample synthetic time series with `custom_dataset_sampling.ipynb`.
 
 
 ## Google Colab
