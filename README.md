@@ -168,16 +168,14 @@ Its open-source code is available [here](https://github.com/ML4ITS/TimeVQVAE-Ano
 
 
 ## Citation
-```
 [1] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Vector quantized time series generation with a bidirectional prior model." arXiv preprint arXiv:2303.04743 (2023).
 
 [2] Lee, Daesoo, Erlend Aune, and Sara Malacarne. "Masked Generative Modeling with Enhanced Sampling Scheme." arXiv preprint arXiv:2309.07945 (2023).
 
 [3]
 
-[4] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Explainable Anomaly Detection using Masked Latent Generative Modeling." arXiv preprint arXiv:2311.12550 (2023).
+[4] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Explainable time series anomaly detection using masked latent generative modeling." Pattern Recognition (2024): 110826.
 
 [5] Dempster, Angus, François Petitjean, and Geoffrey I. Webb. "ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels." Data Mining and Knowledge Discovery 34.5 (2020): 1454-1495.
 
 [6] Ziyin, Liu, Tilman Hartwig, and Masahito Ueda. "Neural networks fail to learn periodic functions and how to fix it." Advances in Neural Information Processing Systems 33 (2020): 1583-1594.
-```
