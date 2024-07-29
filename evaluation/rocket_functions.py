@@ -10,8 +10,13 @@
 #
 # https://arxiv.org/abs/1910.13051 (preprint)
 
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 from numba import njit, prange
+import torch.jit as jit
+
 
 @njit("Tuple((float64[:],int32[:],float64[:],int32[:],int32[:]))(int64,int64)")
 def generate_kernels(input_length, num_kernels):
@@ -109,3 +114,73 @@ def apply_kernels(X, kernels):
             a2 = b2
 
     return _X
+
+
+# class MiniRocketTransform(jit.ScriptModule):
+class MiniRocketTransform(nn.Module):
+    def __init__(self, input_length:int, num_features:int=10000):
+        super(MiniRocketTransform, self).__init__()
+        self.num_features = num_features
+        
+        # Define kernel parameters
+        self.kernel_length = 9
+        self.num_kernels = 84  # Based on the paper's default 9{3} subset
+        self.kernels = self._generate_kernels()
+        
+        # Compute dilations
+        self.dilations = self._compute_dilations(input_length)
+        
+        # Compute bias quantiles
+        self.biases = None
+    
+    def _generate_kernels(self):
+        # Generate fixed set of two-valued kernels with weights {-1, 2}
+        kernel_set = []
+        for i in range(self.num_kernels):
+            kernel = np.random.choice([-1, 2], size=self.kernel_length, p=[2/3, 1/3])
+            if np.sum(kernel) != 0:
+                kernel_set.append(kernel)
+        return np.array(kernel_set)
+    
+    def _compute_dilations(self, input_length):
+        max_dilation = (input_length - 1) // (self.kernel_length - 1)
+        dilations = np.logspace(0, np.log10(max_dilation), num=self.num_kernels, base=2, dtype=int)
+        return np.unique(dilations)
+    
+    @torch.no_grad()
+    # @jit.script_method
+    def forward(self, x, normalize=True):
+        self.eval()
+
+        batch_size, _, length = x.shape
+        x_transformed = torch.zeros((batch_size, self.num_features), device=x.device)
+        
+        feature_idx = 0
+        for kernel in self.kernels:
+            for dilation in self.dilations:
+                kernel_dilated = np.zeros(self.kernel_length + (self.kernel_length - 1) * (dilation - 1))
+                kernel_dilated[::dilation] = kernel
+                kernel_tensor = torch.tensor(kernel_dilated, dtype=torch.float32, device=x.device).view(1, 1, -1)
+                
+                conv_output = nn.functional.conv1d(x, kernel_tensor, padding=len(kernel_tensor) // 2)
+                
+                if self.biases is None:
+                    self.biases = self._compute_biases(conv_output)
+                
+                for bias in self.biases:
+                    ppv = (conv_output - bias > 0).float().mean(dim=2)
+                    x_transformed[:, feature_idx] = ppv.view(-1)
+                    feature_idx += 1
+        
+        if normalize:
+            x_transformed = F.normalize(x_transformed, p=2, dim=-1)
+
+        return x_transformed
+    
+    def _compute_biases(self, conv_output):
+        # Compute biases as quantiles from the convolution output
+        biases = []
+        for i in range(3):
+            bias = torch.quantile(conv_output, q=(i+1)/4.0, dim=2).mean(dim=0)
+            biases.append(bias)
+        return biases

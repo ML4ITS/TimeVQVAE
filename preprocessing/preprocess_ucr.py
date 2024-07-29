@@ -31,8 +31,8 @@ class DatasetImporterUCR(object):
         df_train = pd.read_csv(self.data_root.joinpath(f"{dataset_name}_TRAIN.tsv"), sep='\t', header=None)
         df_test = pd.read_csv(self.data_root.joinpath(f"{dataset_name}_TEST.tsv"), sep='\t', header=None)
 
-        self.X_train, self.X_test = df_train.iloc[:, 1:].values, df_test.iloc[:, 1:].values
-        self.Y_train, self.Y_test = df_train.iloc[:, [0]].values, df_test.iloc[:, [0]].values
+        self.X_train, self.X_test = df_train.iloc[:, 1:].values[:, np.newaxis, :], df_test.iloc[:, 1:].values[:, np.newaxis, :]  # (b 1 l)
+        self.Y_train, self.Y_test = df_train.iloc[:, [0]].values[:, np.newaxis, :], df_test.iloc[:, [0]].values[:, np.newaxis, :]  # (b 1 l)
 
         le = LabelEncoder()
         self.Y_train = le.fit_transform(self.Y_train.ravel())[:, None]
@@ -75,25 +75,57 @@ class UCRDataset(Dataset):
             raise ValueError
 
         self._len = self.X.shape[0]
-
-    @staticmethod
-    def _assign_float32(*xs):
-        """
-        assigns `dtype` of `float32`
-        so that we wouldn't have to change `dtype` later before propagating data through a model.
-        """
-        new_xs = []
-        for x in xs:
-            new_xs.append(x.astype(np.float32))
-        return new_xs[0] if (len(xs) == 1) else new_xs
-
-    def getitem_default(self, idx):
+    
+    def __getitem__(self, idx):
         x, y = self.X[idx, :], self.Y[idx, :]
-        x = x[None, :]  # adds a channel dim
         return x, y
 
+    def __len__(self):
+        return self._len
+
+
+
+class DatasetImporterCustom(object):
+    def __init__(self, data_scaling:bool=True, **kwargs):
+        # training and test datasets
+        # typically, you'd load the data, for example, using pandas
+        self.X_train, self.Y_train = np.random.rand(800, 1, 100), np.random.randint(0, 2, size=(800,1))  # X:(n_training_samples, 1, ts_length); 1 denotes a univariate time series; 2 classes in this example
+        self.X_test, self.Y_test = np.random.rand(200, 1, 100), np.random.randint(0, 2, size=(200,1))  # (n_test_samples, 1, ts_length)
+
+        if data_scaling:
+            # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]
+            mean = np.nanmean(self.X_train)
+            var = np.nanvar(self.X_train)
+            self.X_train = (self.X_train - mean) / math.sqrt(var)
+            self.X_test = (self.X_test - mean) / math.sqrt(var)
+
+        np.nan_to_num(self.X_train, copy=False)
+        np.nan_to_num(self.X_test, copy=False)
+        
+
+class CustomDataset(Dataset):
+    def __init__(self, kind: str, dataset_importer:DatasetImporterCustom, **kwargs):
+        """
+        :param kind: "train" | "test"
+        :param dataset_importer: instance of the `DatasetImporter` class.
+        """
+        super().__init__()
+        kind = kind.lower()
+        assert kind in ['train', 'test']
+        self.kind = kind
+        
+        if kind == "train":
+            self.X, self.Y = dataset_importer.X_train, dataset_importer.Y_train
+        elif kind == "test":
+            self.X, self.Y = dataset_importer.X_test, dataset_importer.Y_test
+        else:
+            raise ValueError
+
+        self._len = self.X.shape[0]
+    
     def __getitem__(self, idx):
-        return self.getitem_default(idx)
+        x, y = self.X[idx, :], self.Y[idx, :]
+        return x, y
 
     def __len__(self):
         return self._len

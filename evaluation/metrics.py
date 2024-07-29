@@ -1,20 +1,11 @@
 """
 FID, IS
 """
-import os
-import copy
-import tempfile
-from pathlib import Path
-from typing import Tuple
+from typing import Tuple, Union
 
 import torch
-import torch.nn.functional as F
 import torch.nn as nn
-import wandb
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
-from sklearn.manifold import TSNE
 
 from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN_2.example_compute_FID import calculate_fid
@@ -22,9 +13,24 @@ from supervised_FCN_2.example_compute_IS import calculate_inception_score
 from generators.sample import unconditional_sample, conditional_sample
 
 from evaluation.rocket_functions import generate_kernels, apply_kernels
-from preprocessing.preprocess_ucr import DatasetImporterUCR
+from preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 from utils import freeze, remove_outliers
 from evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
+
+
+@torch.no_grad()
+def sample(batch_size:int, maskgit, device, n_samples: int, kind: str, class_index:Union[None,int]):
+    assert kind in ['unconditional', 'conditional']
+
+    # sampling
+    if kind == 'unconditional':
+        x_new_l, x_new_h, x_new = unconditional_sample(maskgit, n_samples, device, batch_size=batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+    elif kind == 'conditional':
+        x_new_l, x_new_h, x_new = conditional_sample(maskgit, n_samples, device, class_index, batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+    else:
+        raise ValueError
+
+    return x_new_l, x_new_h, x_new
 
 
 class Metrics(nn.Module):
@@ -37,52 +43,43 @@ class Metrics(nn.Module):
     """
     def __init__(self, 
                  dataset_name: str, 
+                 n_classes:int,
                  feature_extractor_type:str, 
                  rocket_num_kernels:int=1000,
                  batch_size: int=32,
+                 use_custom_dataset:bool=False
                  ):
         super().__init__()
         self.dataset_name = dataset_name
         self.feature_extractor_type = feature_extractor_type
         self.batch_size = batch_size
 
-        # load the pretrained FCN
-        self.fcn = load_pretrained_FCN(dataset_name)
-        freeze(self.fcn)
-        self.fcn.eval()
-
         # load the numpy matrix of the test samples
-        dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True)
-        self.X_train = dataset_importer.X_train[:, None, :]  # (b c l)
-        self.X_test = dataset_importer.X_test[:, None, :]  # (b c l)
-        self.n_classes = len(np.unique(dataset_importer.Y_train))
+        dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True) if not use_custom_dataset else DatasetImporterCustom()
+        self.X_train = dataset_importer.X_train  # (b 1 l)
+        self.X_test = dataset_importer.X_test  # (b 1 l)
+        self.n_classes = n_classes
         
-        # load rocket (to extract unbiased representations)
-        input_length = self.X_train.shape[-1]
-        self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
-
+        # load a model
+        if self.feature_extractor_type == 'supervised_fcn':
+            self.fcn = load_pretrained_FCN(dataset_name)
+            freeze(self.fcn)
+            self.fcn.eval()
+        elif self.feature_extractor_type == 'rocket':
+            input_length = self.X_train.shape[-1]
+            self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
+        else:
+            raise ValueError
+        
         # compute z_train, z_test
         self.z_train = self.compute_z(self.X_train)  # (b d)
         self.z_test = self.compute_z(self.X_test)  # (b d)
-        
-        # self.z_train = remove_outliers(self.z_train)
-        # self.z_test = remove_outliers(self.z_test)
 
     @torch.no_grad()
-    def sample(self, maskgit, device, n_samples: int, kind: str, class_index: int = -1):
-        assert kind in ['unconditional', 'conditional']
-
-        # sampling
-        if kind == 'unconditional':
-            x_new_l, x_new_h, x_new = unconditional_sample(maskgit, n_samples, device, batch_size=self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
-        elif kind == 'conditional':
-            x_new_l, x_new_h, x_new = conditional_sample(maskgit, n_samples, device, class_index, self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
-        else:
-            raise ValueError
-
-        return x_new_l, x_new_h, x_new
+    def sample(self, maskgit, device, n_samples: int, kind: str, class_index:Union[None,int]):
+        return sample(self.batch_size, maskgit, device, n_samples, kind, class_index)
         
-    def _extract_feature_representations(self, x:np.ndarray):
+    def extract_feature_representations(self, x:np.ndarray):
         """
         x: (b 1 l)
         """
@@ -105,7 +102,7 @@ class Metrics(nn.Module):
         zs = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            z = self._extract_feature_representations(x[s])
+            z = self.extract_feature_representations(x[s])
             zs.append(z)
         zs = np.concatenate(zs, axis=0)
         z_mu, z_std = np.mean(zs, axis=0)[None,:], np.std(zs, axis=0)[None,:]  # (1 d), (1 d)
@@ -121,7 +118,7 @@ class Metrics(nn.Module):
         zs = []
         for i in range(n_iters):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
-            z = self._extract_feature_representations(x[s])
+            z = self.extract_feature_representations(x[s])
             zs.append(z)
         zs = np.concatenate(zs, axis=0)
         return zs

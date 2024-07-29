@@ -2,35 +2,35 @@ dataset:
   in_channels: 1
   data_scaling: True
   batch_sizes:
-    stage1: 16 #128
+    stage1: 32
     stage2: 16
     stage_fid_enhancer: 16
   num_workers: 0
 
 exp_params:
-  LR: 0.001
+  lr: 0.001
+  linear_warmup_rate: 0.1
 
 trainer_params:
   max_steps:
-    stage1: 50000
-    stage2: 50000
-    stage_fid_enhancer: 10000
+    stage1: 50000  # 50000
+    stage2: 200000  #50000
+    stage_fid_enhancer: 50000
   val_check_interval:
     stage1: 5000
-    stage2: 5000
-    stage_fid_enhancer: 100
+    stage2: 20000  #5000
+    stage_fid_enhancer: 2500
 
 encoder:
   dim: 128
   n_resnet_blocks: 2
   downsampled_width:
-    lf: 8 #32 #8
+    lf: 8
     hf: 32
 
 decoder:
   dim: 128
   n_resnet_blocks: 2
-
 
 VQ-VAE:
   n_fft: 4
@@ -39,10 +39,12 @@ VQ-VAE:
     hf: 32
 
 MaskGIT:
-  choice_temperatures: # for masking
-    lf: 4
+  choice_temperatures: # higher temp -> higher sample diversity
+    lf: 10
     hf: 4
-  T: 10
+  T:  # num sampling (iterative decoding) steps
+    lf: 10
+    hf: 1
   prior_model_l:
     hidden_dim: 128
     n_layers: 4
@@ -50,7 +52,8 @@ MaskGIT:
     ff_mult: 1
     use_rmsnorm: True
     p_unconditional: 0.2
-    dropout: 0.3
+    model_dropout: 0.3
+    emb_dropout: 0.3
   prior_model_h:
     hidden_dim: 32
     n_layers: 1
@@ -58,13 +61,14 @@ MaskGIT:
     ff_mult: 1
     use_rmsnorm: True
     p_unconditional: 0.2
-    dropout: 0.5
-  ESS:
-    use: False
-    error_ratio_ma_rate: 0.3
+    model_dropout: 0.3
+    emb_dropout: 0.3
+  cfg_scale: 1.  # classifier-free guidance scale
+  # ESS:  # under maintenance
+  #   use: False
+  #   error_ratio_ma_rate: 0.3
 
-class_guidance:
-  guidance_scale: 1.
+
 
 fidelity_enhancer:
   dim: 8
@@ -75,6 +79,15 @@ fidelity_enhancer:
     - 8
   resnet_block_groups: 4
   dropout: 0.5
+  tau_search_rng: 
+    - 0.1
+    - 0.5
+    - 1
+    - 2
+    - 4
+  # tau_search_rng: 
+    # - 512
+  percept_loss_weight: 0. #1000
 
 evaluation:
   batch_size: 32

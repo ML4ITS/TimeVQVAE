@@ -50,39 +50,53 @@ We did so becaused the original datasets have two primary issues to be used to t
 - `configs/config.yaml`: configuration for dataset, data loading, optimizer, and models (_i.e.,_ encoder, decoder, vector-quantizer, and MaskGIT)
 - `config/sconfig_cas.yaml`: configuration for running CAS, Classification Accuracy Score (= TSTR, Training on Synthetic and Test on Real).
 
-### Training
-:rocket: The stage 1 and stage 2 training can be performed with the following command: 
+### Training: Stage1
 ```commandline
 python stage1.py --dataset_names FordA --gpu_device_idx 0
 ```
+The trained model is saved as `stage1-dataset_name.ckpt` in `saved_models/`.
+
+### Training: Stage2
 ```commandline
 python stage2.py --dataset_names FordA --gpu_device_idx 0
 ```
+The trained model is saved as `stage2-dataset_name.ckpt` in `saved_models/`.
 
-:bulb: The training pipeline is as follows:
-- Run `stage1.py` and it saves trained encoders, decoders, and vector-quantizers for LF and HF.
-- Run `stage2.py` and it saves the prior model (_i.e.,_ bidirectional transformer); `stage2.py` includes an evaluation step which is performed right after the stage 2 training. The evaluation includes a visualization plot of samples, FID score, and IS (Inception Score).    
 
 <!-- :rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
 ```commandline
 python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
 ``` -->
 
-:rocket: CAS can be performed with the following command:
+### Run CAS (Classification Accuracy Score)
+
 ```commandline
 python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
 ```
 
 ### Evaluation
-The following code runs the evaluation step (the same evaluation step as the end of `stage2.py`).
+FID, IS, visual inspection between $p(X)$ and $p_\theta(\hat{X})$ with the corresponding comparison in an evaluation latent space.
 ```commandline
-python evaluate.py --dataset_names FordA --gpu_device_idx 0 -feature_extractor_type supervised_fcn
+python evaluate.py --dataset_names FordA --gpu_device_idx 0
 ```
 
-We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. You can use the ROCKET representations for the PCA visualization and FID calculation by running
+### Minimal Code for Sampling
+Refer to `simple_sampling.ipynb`.
+
+
+### Train it on a Custom Dataset
+1. a template class, `DatasetImporterCustom`, is given in `preprocessing/preprocess_ucr.py`.
+    - no need to modify any other code except `DatasetImporterCustom` to train TimeVQVAE on your dataset. 
+2. write a data loading code for your dataset in `__init__` within `DatasetImporterCustom`.
+3. run the following codes - stage1,2.
+
 ```commandline
-python evaluate.py --dataset_names FordA --gpu_device_idx 0 --feature_extractor_type rocket
+python stage1.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
 ```
+```commandline
+python stage2.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
+```
+After stage 1 and 2, you can sample synthetic time series with `custom_dataset_sampling.ipynb`.
 
 
 ## Google Colab
@@ -95,20 +109,22 @@ The usage is simple:
 
 <!-- Note that the pretrained models are automatically downloaded within the notebook. In case you're interested, the pretrained models are stored in [here](https://figshare.com/articles/software/Pretrained_models_of_TimeVQVAE/22048034). -->
 
-## Remarks
-* The full result tables for FID, IS, and CAS are available in `results/`.
+<!-- ## Remarks
+* The full result tables for FID, IS, and CAS are available in `results/`. -->
 
 
 ## Update Notes
 
 ### Implementation Modifications
-* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
-* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`.
+* [2024.07.26] updated $E$ and $D$ so that they have incremental hidden dimension sizes for depths; cosine annealing w/ linear warmup lr scheduler is used; reconstruction loss on a time domain only while modeling a discrete latent space from a time-frequency domain as before.
+* [2024.07.23] Snake activation [6] function is used instead of (Leaky)ReLU in the encoder and decoder. It's shown to generally improve the VQVAE's reconstruction capability in my experiments, especially beneficial for periodic time series like the ones in the FordA dataset.
 * [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
+* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`. We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. This is a default setting now.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
+* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
 
 
-### Enhanced Sampling Scheme (ESS) [2]
+<!-- ### Enhanced Sampling Scheme (ESS) [2]
  We have published a [follow-up paper](https://arxiv.org/abs/2309.07945) [2] that enhances the sampling process by resolving its  existing limitations, which in turn results in considerably higher fidelity.
 To be more precise, we first sample a token set with a naive iterative decoding (existing sampling process) and remove the less-likely tokens, and resample the tokens with a better realism approach for tokens.
 The figure below illustrates the overview of [2].
@@ -116,19 +132,25 @@ The figure below illustrates the overview of [2].
 <img src=".fig/proposed_sampling_strategy_overview.png" alt="" width=100% height=100%>
 </p>
 
-You can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`.
+You can use it by setting `MaskGIT.ESS.use = True` in `configs/config.yaml`. -->
 
 
-### Time Series FidelityEnhancer (TS-FidelityEnhancer) [3] (not relased yet)
-We have published a follow-up paper that proposes, _TS-FidelityEnhancer_. 
-It acts like a mapping function such that it transforms a generated time series to be more realistic while retaining the original context.
+### Fidelity Enhancer for Vector Quantized Time Series Generator (FE-VQTSG) [3] (not published yet)
+<!-- We have published a follow-up paper that proposes, _FE-VQTSG_.  -->
+It is a U-Net-based mapping model that transforms a synthetic time series generated by a VQ-based TSG method to be more realistic while retaining the original context.
 <p align="center">
 <img src=".fig/inference_process_tsfe.png" alt="" width=100% height=100%>
 </p>
 
-To employ this, the stage1 training must've been finished. Then, you can train the fidelity enhancer by running 
+The model training is availble after finishing the stage1 and stage2 trainings. 
+To train FE-VQTSG, run 
 ```commandline
-python stage_fid_enhancer.py  --dataset_names FordA --gpu_device_idx 0 --use_fidelity_enhancer True
+python stage_fid_enhancer.py  --dataset_names FordA --gpu_device_idx 0
+```
+
+During the evaluation, FE-VQTSG can be employed by setting `--use_fidelity_enhancer True`.
+```commandline
+python evaluate.py --dataset_names FordA --gpu_device_idx 0 --use_fidelity_enhancer True
 ```
 
 
@@ -147,43 +169,15 @@ Its open-source code is available [here](https://github.com/ML4ITS/TimeVQVAE-Ano
 
 ## Citation
 ```
-[1]
-@inproceedings{lee2023vector,
-  title={Vector Quantized Time Series Generation with a Bidirectional Prior Model},
-  author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
-  booktitle={International Conference on Artificial Intelligence and Statistics},
-  pages={7665--7693},
-  year={2023},
-  organization={PMLR}
-}
+[1] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Vector quantized time series generation with a bidirectional prior model." arXiv preprint arXiv:2303.04743 (2023).
 
-[2]
-@article{lee2023masked,
-  title={Masked Generative Modeling with Enhanced Sampling Scheme},
-  author={Lee, Daesoo and Aune, Erlend and Malacarne, Sara},
-  journal={arXiv preprint arXiv:2309.07945},
-  year={2023}
-}
+[2] Lee, Daesoo, Erlend Aune, and Sara Malacarne. "Masked Generative Modeling with Enhanced Sampling Scheme." arXiv preprint arXiv:2309.07945 (2023).
 
 [3]
 
-[4] 
-@article{lee2023explainable,
-  title={Explainable Time Series Anomaly Detection using Masked Latent Generative Modeling},
-  author={Lee, Daesoo and Malacarne, Sara and Aune, Erlend},
-  journal={arXiv preprint arXiv:2311.12550},
-  year={2023}
-}
+[4] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Explainable Anomaly Detection using Masked Latent Generative Modeling." arXiv preprint arXiv:2311.12550 (2023).
 
-[5]
-@article{dempster2020rocket,
-  title={ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels},
-  author={Dempster, Angus and Petitjean, Fran{\c{c}}ois and Webb, Geoffrey I},
-  journal={Data Mining and Knowledge Discovery},
-  volume={34},
-  number={5},
-  pages={1454--1495},
-  year={2020},
-  publisher={Springer}
-}
+[5] Dempster, Angus, François Petitjean, and Geoffrey I. Webb. "ROCKET: exceptionally fast and accurate time series classification using random convolutional kernels." Data Mining and Knowledge Discovery 34.5 (2020): 1454-1495.
+
+[6] Ziyin, Liu, Tilman Hartwig, and Masahito Ueda. "Neural networks fail to learn periodic functions and how to fix it." Advances in Neural Information Processing Systems 33 (2020): 1583-1594.
 ```

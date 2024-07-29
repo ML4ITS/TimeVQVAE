@@ -5,14 +5,17 @@ import yaml
 import tempfile
 from pathlib import Path
 from typing import Union
+import argparse
 
-from einops import rearrange
+import torch.jit as jit
+from einops import rearrange, repeat
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import IsolationForest
+from torch.optim.lr_scheduler import SequentialLR, LambdaLR, CosineAnnealingLR
 
 from sklearn.preprocessing import MinMaxScaler
 import requests
@@ -216,22 +219,22 @@ def save_model(models_dict: dict, dirname='saved_models', id: str = ''):
             torch.save(model.state_dict(), get_root_dir().joinpath(dirname, model_name + id_ + '.ckpt'))
 
 
-def time_to_timefreq(x, n_fft: int, C: int):
+def time_to_timefreq(x, n_fft: int, C: int, norm:bool=True):
     """
     x: (B, C, L)
     """
     x = rearrange(x, 'b c l -> (b c) l')
-    x = torch.stft(x, n_fft, normalized=True, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
+    x = torch.stft(x, n_fft, normalized=norm, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = torch.view_as_real(x)  # (B, N, T, 2); 2: (real, imag)
     x = rearrange(x, '(b c) n t z -> b (c z) n t ', c=C)  # z=2 (real, imag)
     return x  # (B, C, H, W)
 
 
-def timefreq_to_time(x, n_fft: int, C: int):
+def timefreq_to_time(x, n_fft: int, C: int, norm:bool=True):
     x = rearrange(x, 'b (c z) n t -> (b c) n t z', c=C).contiguous()
     x = x.contiguous()
     x = torch.view_as_complex(x)
-    x = torch.istft(x, n_fft, normalized=True, window=torch.hann_window(window_length=n_fft, device=x.device))
+    x = torch.istft(x, n_fft, normalized=norm, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = rearrange(x, '(b c) l -> b c l', c=C)
     return x
 
@@ -268,21 +271,47 @@ def quantize(z, vq_model, transpose_channel_length_axes=False, svq_temp:Union[fl
     return z_q, indices, vq_loss, perplexity
 
 
-def zero_pad_high_freq(xf):
+# def zero_pad_high_freq(xf):
+#     """
+#     xf: (B, C, H, W); H: frequency-axis, W: temporal-axis
+#     """
+#     xf_l = torch.zeros(xf.shape, dtype=torch.float).to(xf.device)
+#     xf_l[:, :, 0, :] = xf[:, :, 0, :]
+#     return xf_l
+
+
+# def zero_pad_low_freq(xf):
+#     """
+#     xf: (B, C, H, W); H: frequency-axis, W: temporal-axis
+#     """
+#     xf_h = torch.zeros(xf.shape, dtype=torch.float).to(xf.device)
+#     xf_h[:, :, 1:, :] = xf[:, :, 1:, :]
+#     return xf_h
+
+def zero_pad_high_freq(xf, copy=False):
     """
     xf: (B, C, H, W); H: frequency-axis, W: temporal-axis
     """
-    xf_l = torch.zeros(xf.shape).to(xf.device)
-    xf_l[:, :, 0, :] = xf[:, :, 0, :]
+    if not copy:
+        xf_l = torch.zeros(xf.shape).to(xf.device)
+        xf_l[:, :, 0, :] = xf[:, :, 0, :]  # (b c h w)
+    else:
+        # model input: copy the LF component and paste it to the rest of the frequency bands
+        xf_l = xf[:, :, [0], :]  # (b c 1 w)
+        xf_l = repeat(xf_l, 'b c 1 w -> b c h w', h=xf.shape[2]).float()  # (b c h w)
     return xf_l
 
-
-def zero_pad_low_freq(xf):
+def zero_pad_low_freq(xf, copy=False):
     """
     xf: (B, C, H, W); H: frequency-axis, W: temporal-axis
     """
-    xf_h = torch.zeros(xf.shape).to(xf.device)
-    xf_h[:, :, 1:, :] = xf[:, :, 1:, :]
+    if not copy:
+        xf_h = torch.zeros(xf.shape).to(xf.device)
+        xf_h[:, :, 1:, :] = xf[:, :, 1:, :]
+    else:
+        # model input: copy the first HF component, and paste it to the LF band
+        xf_h = xf[:, :, 1:, :]  # (b c h-1 w)
+        xf_h = torch.cat((xf_h[:,:,[0],:], xf_h), dim=2).float()  # (b c h w)
     return xf_h
 
 def compute_emb_loss(codebook, x, use_cosine_sim, esm_max_codes):
@@ -404,10 +433,101 @@ def remove_outliers(data:np.ndarray):
     return filtered_data
 
 
-class SnakeActivation(nn.Module):
-    def __init__(self, initial_a=1.0):
-        super(SnakeActivation, self).__init__()
-        self.a = nn.Parameter(torch.tensor(initial_a, dtype=torch.float32))
+class SnakeActivation(jit.ScriptModule):
+    """
+    this version allows multiple values of `a` for different channels/num_features
+    """
+    def __init__(self, num_features:int, dim:int, a_base=0.2, learnable=True, a_max=0.5):
+        super().__init__()
+        assert dim in [1, 2], '`dim` supports 1D and 2D inputs.'
 
+        if learnable:
+            if dim == 1:  # (b d l); like time series
+                a = np.random.uniform(a_base, a_max, size=(1, num_features, 1))  # (1 d 1)
+                self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+            elif dim == 2:  # (b d h w); like 2d images
+                a = np.random.uniform(a_base, a_max, size=(1, num_features, 1, 1))  # (1 d 1 1)
+                self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+        else:
+            self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
+
+    @jit.script_method
     def forward(self, x):
         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
+
+# class SnakeActivation(jit.ScriptModule):
+#     """
+#     this version allows multiple values of `a` for different channels/num_features
+#     """
+#     def __init__(self, num_features:int, dim:int, a_base=0., learnable=True, a_max=1.):
+#         super().__init__()
+#         assert dim in [1, 2], '`dim` supports 1D and 2D inputs.'
+
+#         if learnable:
+#             if dim == 1:  # (b d l); like time series
+#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1))  # (1 d 1)
+#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+#             elif dim == 2:  # (b d h w); like 2d images
+#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1, 1))  # (1 d 1 1)
+#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+#         else:
+#             self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
+
+#     @jit.script_method
+#     def forward(self, x):
+#         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
+
+
+# @torch.jit.script
+# def snakemod(x, alpha, beta):
+#     shape = x.shape
+#     c = (alpha.abs() + beta.abs())*alpha.sign()
+#     x = x.reshape(shape[0], shape[1], -1)
+#     x = x + (c + 1e-9).reciprocal() * torch.sin(alpha * x + torch.sin(beta*x)).pow(2)
+#     x = x.reshape(shape)
+#     return x
+
+# class SnakeActivation(nn.Module):
+#     """
+#     proposed by Erlend
+#     """
+#     def __init__(self, channels, *args, **kwargs):
+#         super().__init__()
+#         self.alpha = nn.Parameter((torch.rand(1, channels, 1)+0.2)*10.)
+#         self.beta = nn.Parameter(torch.zeros(1, channels, 1))
+
+#     def forward(self, x):
+#         return snakemod(x, self.alpha, self.beta)
+    
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
+def linear_warmup_cosine_annealingLR(optimizer: torch.optim.Optimizer, max_steps:int, linear_warmup_rate:float=0.1, min_lr:float=1e-6):
+    assert linear_warmup_rate > 0. and linear_warmup_rate < 1., '0 < linear_warmup_rate < 1.'
+
+    warmup_steps = int(max_steps * linear_warmup_rate)  # n% of max_steps
+
+    # Define the warmup scheduler
+    def warmup_lambda(current_step):
+        if current_step >= warmup_steps:
+            return 1.0
+        return float(current_step) / float(max(1, warmup_steps))
+
+    # Create the warmup scheduler
+    warmup_scheduler = LambdaLR(optimizer, lr_lambda=warmup_lambda)
+
+    # Create the cosine annealing scheduler
+    cosine_scheduler = CosineAnnealingLR(optimizer, max_steps - warmup_steps, eta_min=min_lr)
+
+    # Combine the warmup and cosine annealing schedulers
+    scheduler = SequentialLR(optimizer, schedulers=[warmup_scheduler, cosine_scheduler], milestones=[warmup_steps])
+    return scheduler

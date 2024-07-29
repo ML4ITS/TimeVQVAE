@@ -12,6 +12,7 @@ from torch import nn, einsum
 import torch.nn.functional as F
 
 from einops import rearrange, reduce
+from utils import SnakeActivation
 
 # constants
 
@@ -154,11 +155,11 @@ class Block(nn.Module):
         super().__init__()
         self.proj = WeightStandardizedConv2d(dim, dim_out, 3, padding = 1)
         self.norm = nn.GroupNorm(groups, dim_out)
-        self.act = nn.SiLU()
+        self.act = SnakeActivation(dim_out, dim=1) #nn.SiLU()
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, scale_shift = None):
-        x = self.proj(x)
+        x = self.proj(x)  # (b d l)
         x = self.norm(x)
 
         if exists(scale_shift):
@@ -397,6 +398,16 @@ class FidelityEnhancer(nn.Module):
         self.unet = Unet1D(channels=in_channels, **config['fidelity_enhancer'])
         self.register_buffer('tau', torch.tensor(0.).float())
 
+    # def forward(self, x_a):
+    #     """
+    #     :param xhat: (b 1 l)
+    #     :param super_resolution_rate: which factor is x lengthened by? (1 equals no use)
+    #     :return:
+    #     """
+    #     x_a = F.upsample(x_a, size=self.input_length, mode='linear', align_corners=False)
+    #     xhat = self.unet(x_a)  # (b 1 l)
+    #     return xhat
+    
     def forward(self, x_a):
         """
         :param xhat: (b 1 l)
