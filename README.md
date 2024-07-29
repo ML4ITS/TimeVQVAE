@@ -116,12 +116,12 @@ The usage is simple:
 ## Update Notes
 
 ### Implementation Modifications
-* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
-* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`. We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. This is a default setting now.
-* [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
-* [2024.07.23] Snake activation [6] function is used instead of (Leaky)ReLU in the encoder and decoder. It's shown to generally improve the VQVAE's reconstruction capability in my experiments, especially beneficial for periodic time series like the ones in the FordA dataset.
 * [2024.07.26] updated $E$ and $D$ so that they have incremental hidden dimension sizes for depths; cosine annealing w/ linear warmup lr scheduler is used; reconstruction loss on a time domain only while modeling a discrete latent space from a time-frequency domain as before.
+* [2024.07.23] Snake activation [6] function is used instead of (Leaky)ReLU in the encoder and decoder. It's shown to generally improve the VQVAE's reconstruction capability in my experiments, especially beneficial for periodic time series like the ones in the FordA dataset.
+* [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
+* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`. We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. This is a default setting now.
+* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
+* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
 
 
 <!-- ### Enhanced Sampling Scheme (ESS) [2]

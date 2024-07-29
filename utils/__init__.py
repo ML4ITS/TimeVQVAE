@@ -219,22 +219,22 @@ def save_model(models_dict: dict, dirname='saved_models', id: str = ''):
             torch.save(model.state_dict(), get_root_dir().joinpath(dirname, model_name + id_ + '.ckpt'))
 
 
-def time_to_timefreq(x, n_fft: int, C: int):
+def time_to_timefreq(x, n_fft: int, C: int, norm:bool=True):
     """
     x: (B, C, L)
     """
     x = rearrange(x, 'b c l -> (b c) l')
-    x = torch.stft(x, n_fft, normalized=True, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
+    x = torch.stft(x, n_fft, normalized=norm, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = torch.view_as_real(x)  # (B, N, T, 2); 2: (real, imag)
     x = rearrange(x, '(b c) n t z -> b (c z) n t ', c=C)  # z=2 (real, imag)
     return x  # (B, C, H, W)
 
 
-def timefreq_to_time(x, n_fft: int, C: int):
+def timefreq_to_time(x, n_fft: int, C: int, norm:bool=True):
     x = rearrange(x, 'b (c z) n t -> (b c) n t z', c=C).contiguous()
     x = x.contiguous()
     x = torch.view_as_complex(x)
-    x = torch.istft(x, n_fft, normalized=True, window=torch.hann_window(window_length=n_fft, device=x.device))
+    x = torch.istft(x, n_fft, normalized=norm, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = rearrange(x, '(b c) l -> b c l', c=C)
     return x
 
@@ -433,19 +433,6 @@ def remove_outliers(data:np.ndarray):
     return filtered_data
 
 
-# class SnakeActivation(jit.ScriptModule):
-#     def __init__(self, a_base=0.2, learnable=True, a_max=0.5):
-#         super(SnakeActivation, self).__init__()
-#         if learnable:
-#             a = np.random.uniform(a_base, a_max)
-#             self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
-#         else:
-#             self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
-
-#     @jit.script_method
-#     def forward(self, x):
-#         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
-
 class SnakeActivation(jit.ScriptModule):
     """
     this version allows multiple values of `a` for different channels/num_features
@@ -468,38 +455,50 @@ class SnakeActivation(jit.ScriptModule):
     def forward(self, x):
         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
 
+# class SnakeActivation(jit.ScriptModule):
+#     """
+#     this version allows multiple values of `a` for different channels/num_features
+#     """
+#     def __init__(self, num_features:int, dim:int, a_base=0., learnable=True, a_max=1.):
+#         super().__init__()
+#         assert dim in [1, 2], '`dim` supports 1D and 2D inputs.'
 
-class SnakyGELU(jit.ScriptModule):
-    def __init__(self, num_features:int, dim:int, a_base=0.2, learnable=True, a_max=0.5):
-        super().__init__()
-        assert dim in [1, 2], '`dim` supports 1D and 2D inputs.'
-        
-        if learnable:
-            if dim == 1:  # (b d l); like time series
-                a = np.random.uniform(a_base, a_max, size=(1, num_features, 1))  # (1 d 1)
-                self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
-            elif dim == 2:  # (b d h w); like 2d images
-                a = np.random.uniform(a_base, a_max, size=(1, num_features, 1, 1))  # (1 d 1 1)
-                self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
-        else:
-            self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
+#         if learnable:
+#             if dim == 1:  # (b d l); like time series
+#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1))  # (1 d 1)
+#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+#             elif dim == 2:  # (b d h w); like 2d images
+#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1, 1))  # (1 d 1 1)
+#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
+#         else:
+#             self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
 
-        self.gelu = nn.GELU()
-        if dim == 1:
-            self.conv = nn.Conv1d(2*num_features, num_features, 1)
-        elif dim == 2:
-            self.conv = nn.Conv2d(2*num_features, num_features, 1)
-        else:
-            raise ValueError
+#     @jit.script_method
+#     def forward(self, x):
+#         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
 
-    @jit.script_method
-    def forward(self, x):
-        out_snake = x + (1 / self.a) * torch.sin(self.a * x) ** 2  # (b c ...)
-        out_gelu = self.gelu(x)  # (b c ...)
-        out = torch.cat((out_snake, out_gelu), dim=1)  # (b 2c ...)
-        out = self.conv(out)  # (b c ...)
-        return out
 
+# @torch.jit.script
+# def snakemod(x, alpha, beta):
+#     shape = x.shape
+#     c = (alpha.abs() + beta.abs())*alpha.sign()
+#     x = x.reshape(shape[0], shape[1], -1)
+#     x = x + (c + 1e-9).reciprocal() * torch.sin(alpha * x + torch.sin(beta*x)).pow(2)
+#     x = x.reshape(shape)
+#     return x
+
+# class SnakeActivation(nn.Module):
+#     """
+#     proposed by Erlend
+#     """
+#     def __init__(self, channels, *args, **kwargs):
+#         super().__init__()
+#         self.alpha = nn.Parameter((torch.rand(1, channels, 1)+0.2)*10.)
+#         self.beta = nn.Parameter(torch.zeros(1, channels, 1))
+
+#     def forward(self, x):
+#         return snakemod(x, self.alpha, self.beta)
+    
 
 def str2bool(v):
     if isinstance(v, bool):

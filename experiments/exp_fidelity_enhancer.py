@@ -8,14 +8,14 @@ import numpy as np
 import torch.nn.functional as F
 from sklearn.decomposition import PCA
 from einops import rearrange
-
+from pytorch_lightning.loggers import WandbLogger
 import pytorch_lightning as pl
 
 from evaluation.rocket_functions import MiniRocketTransform
 from evaluation.metrics import Metrics
 from generators.fidelity_enhancer import FidelityEnhancer
 from experiments.exp_stage2 import ExpStage2
-from utils import freeze, zero_pad_low_freq, zero_pad_high_freq, linear_warmup_cosine_annealingLR
+from utils import freeze, zero_pad_low_freq, zero_pad_high_freq, linear_warmup_cosine_annealingLR, time_to_timefreq
 
 
 class ExpFidelityEnhancer(pl.LightningModule):
@@ -29,6 +29,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
                  ):
         super().__init__()
         self.config = config
+        self.in_channels = config['dataset']['in_channels']
         self.use_custom_dataset = use_custom_dataset
         self.n_fft = config['VQ-VAE']['n_fft']
         self.tau_search_rng = config['fidelity_enhancer']['tau_search_rng']
@@ -68,6 +69,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
     def search_optimal_tau(self, 
                            X_train:np.ndarray, 
                            device, 
+                           wandb_logger:WandbLogger,
                            n_samples:int=1024, 
                            batch_size:int=32) -> None:
         """
@@ -109,24 +111,26 @@ class ExpFidelityEnhancer(pl.LightningModule):
             fids.append(fid)
             print(f'tau:{tau} | fid:{round(int(fid))}')
 
-            # # ====
-            # fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
-            # fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid)})')
-            # axes[0].set_title('xhat')
-            # axes[0].plot(Xhat[:100,0,:].T, color='C0', alpha=0.2)
-            # axes[1].set_title('x`')
-            # axes[1].plot(X_prime[:100,0,:].T, color='C0', alpha=0.2)
+            # ====
+            fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
+            fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid)})')
+            axes[0].set_title('xhat')
+            axes[0].plot(Xhat[:100,0,:].T, color='C0', alpha=0.2)
+            axes[1].set_title('x`')
+            axes[1].plot(Xprime[:100,0,:].T, color='C0', alpha=0.2)
 
-            # pca = PCA(n_components=2)
-            # Zhat_pca = pca.fit_transform(Zhat)
-            # Z_prime_pca = pca.transform(Z_prime)
+            pca = PCA(n_components=2)
+            Zhat_pca = pca.fit_transform(Zhat)
+            Z_prime_pca = pca.transform(Z_prime)
 
-            # axes[2].scatter(Zhat_pca[:100,0], Zhat_pca[:100,1], alpha=0.2)
-            # axes[2].scatter(Z_prime_pca[:100,0], Z_prime_pca[:100,1], alpha=0.2)
+            axes[2].scatter(Zhat_pca[:100,0], Zhat_pca[:100,1], alpha=0.2)
+            axes[2].scatter(Z_prime_pca[:100,0], Z_prime_pca[:100,1], alpha=0.2)
 
-            # plt.tight_layout()
+            plt.tight_layout()
+            wandb_logger.log_image(key='Xhat vs Xprime', images=[wandb.Image(plt),])
+            plt.close()
             # plt.show()
-            # # ====
+            # ====
         print('{tau:fid} :', {tau: round(float(fid),1) for tau, fid in zip(self.tau_search_rng, fids)})
         optimal_idx = np.argmin(fids)
         optimal_tau = self.tau_search_rng[optimal_idx]
@@ -305,5 +309,5 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['lr'])
-        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['stage_fid_enhancer']['stage2'], self.config['exp_params']['linear_warmup_rate'])
+        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage_fid_enhancer'], self.config['exp_params']['linear_warmup_rate'])
         return {'optimizer': opt, 'lr_scheduler': scheduler}

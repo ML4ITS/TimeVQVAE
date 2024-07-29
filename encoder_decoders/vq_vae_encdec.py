@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from utils import timefreq_to_time, time_to_timefreq, SnakeActivation, SnakyGELU
+from utils import timefreq_to_time, time_to_timefreq, SnakeActivation
 
 
 class ResBlock(nn.Module):

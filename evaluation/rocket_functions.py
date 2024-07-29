@@ -116,7 +116,8 @@ def apply_kernels(X, kernels):
     return _X
 
 
-class MiniRocketTransform(jit.ScriptModule):
+# class MiniRocketTransform(jit.ScriptModule):
+class MiniRocketTransform(nn.Module):
     def __init__(self, input_length:int, num_features:int=10000):
         super(MiniRocketTransform, self).__init__()
         self.num_features = num_features
@@ -147,7 +148,7 @@ class MiniRocketTransform(jit.ScriptModule):
         return np.unique(dilations)
     
     @torch.no_grad()
-    @jit.script.method
+    # @jit.script_method
     def forward(self, x, normalize=True):
         self.eval()
 

@@ -44,11 +44,12 @@ def train_stage_fid_enhancer(config: dict,
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     input_length = train_data_loader.dataset.X.shape[-1]
     train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
-    train_exp.search_optimal_tau(X_train=train_data_loader.dataset.X, device=gpu_device_idx)
 
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name':dataset_name, 'n_trainable_params':n_trainable_params})
-    
+
+    train_exp.search_optimal_tau(X_train=train_data_loader.dataset.X, device=gpu_device_idx, wandb_logger=wandb_logger)
+
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='step')],
