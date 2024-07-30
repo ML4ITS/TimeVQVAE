@@ -203,8 +203,8 @@ class Evaluation(nn.Module):
             # svq_temp = np.random.uniform(*svq_temp_rng)
             # tau = self.config['fidelity_enhancer']['tau']
             tau = self.fidelity_enhancer.tau.item()
-            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
-            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, svq_temp=tau)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, svq_temp=tau)  # (b m)
             x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'lf')  # (b 1 l)
             x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'hf')  # (b 1 l)
             x_a = x_a_l + x_a_h  # (b c l)

@@ -96,8 +96,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
             for i in range(n_iters):
                 x = X_train[i*batch_size:(i+1)*batch_size]
                 x = torch.from_numpy(x).float().to(device)
-                _, sprime_l = maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
-                _, sprime_h = maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
+                _, sprime_l = maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, svq_temp=tau)  # (b n)
+                _, sprime_h = maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, svq_temp=tau)  # (b m)
                 xprime_l = maskgit.decode_token_ind_to_timeseries(sprime_l, 'lf')  # (b 1 l)
                 xprime_h = maskgit.decode_token_ind_to_timeseries(sprime_h, 'hf')  # (b 1 l)
                 xprime = xprime_l + xprime_h  # (b c l)
@@ -167,8 +167,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
         x = x.float()
 
         tau = self.fidelity_enhancer.tau.item()
-        _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
-        _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
+        _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, svq_temp=tau)  # (b n)
+        _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, svq_temp=tau)  # (b m)
 
         fidelity_enhancer_loss, (xprime, xprime_R) = self._fidelity_enhancer_loss_fn(x, sprime_l, sprime_h)
         percept_loss = self._perceptual_loss_fn(x, xprime_R)
@@ -196,8 +196,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
         x = x.float()
 
         tau = self.fidelity_enhancer.tau.item()
-        _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq, svq_temp=tau)  # (b n)
-        _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq, svq_temp=tau)  # (b m)
+        _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, svq_temp=tau)  # (b n)
+        _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, svq_temp=tau)  # (b m)
 
         fidelity_enhancer_loss, (xprime, xprime_R) = self._fidelity_enhancer_loss_fn(x, sprime_l, sprime_h)
         percept_loss = self._perceptual_loss_fn(x, xprime_R)

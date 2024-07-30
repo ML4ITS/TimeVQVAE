@@ -99,19 +99,12 @@ class MaskGIT(nn.Module):
             model.load_state_dict(torch.load(dirname.joinpath(fname)))
 
     @torch.no_grad()
-    def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, spectrogram_padding: Callable = None, svq_temp:Union[float,None]=None):
+    def encode_to_z_q(self, x, encoder: VQVAEEncoder, vq_model: VectorQuantize, svq_temp:Union[float,None]=None):
         """
         encode x to zq
 
         x: (b c l)
         """
-        # C = x.shape[1]
-        # xf = time_to_timefreq(x, self.n_fft, C)  # (B, C, H, W)
-        # if spectrogram_padding is not None:
-        #     xf = spectrogram_padding(xf)
-        # z = encoder(xf)  # (b c h w)
-        # z_q, indices, vq_loss, perplexity = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
-        # return z_q, indices
         z = encoder(x)
         zq, s, _, _ = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
         return zq, s
@@ -147,8 +140,8 @@ class MaskGIT(nn.Module):
         self.vq_model_h.eval()
         
         device = x.device
-        _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l, zero_pad_high_freq)  # (b n)
-        _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h, zero_pad_low_freq)  # (b m)
+        _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l)  # (b n)
+        _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h)  # (b m)
 
         # mask tokens
         s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['lf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
