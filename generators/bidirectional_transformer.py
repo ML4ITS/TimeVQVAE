@@ -69,6 +69,7 @@ class BidirectionalTransformer(nn.Module):
         in_dim = embed_dim if kind == 'lf' else 2 * embed_dim
         out_dim = embed_dim
         self.emb_dropout = emb_dropout
+        self.mask_token_ind = {'lf':codebook_sizes['lf'], 'hf':codebook_sizes['hf']}
 
         # token embeddings
         self.tok_emb_l = nn.Embedding(codebook_sizes['lf'] + 1, embed_dim)  # `+1` is for mask-token
@@ -122,13 +123,20 @@ class BidirectionalTransformer(nn.Module):
             cls_emb = self.class_condition_emb(class_condition)  # (b 1 dim)
             return cls_emb
 
-    def forward_lf(self, embed_ind_l, class_condition: Union[None, torch.Tensor] = None):
-        device = embed_ind_l.device
+    def _token_emb_dropout(self, s:torch.LongTensor, token_emb:torch.FloatTensor, freq_type:str, p:float):
+        mask_ind = (s == self.mask_token_ind[freq_type])[:,:,None]  # (b n 1)
+        token_emb_dropout = F.dropout(token_emb, p=p)  # (b n d); to make the prediction process more robust during sampling
+        token_emb = torch.where(mask_ind, token_emb, token_emb_dropout)  # (b n d)
+        return token_emb
 
-        token_embeddings = self.tok_emb_l(embed_ind_l)  # (b n dim)
+    def forward_lf(self, s_M_l, class_condition: Union[None, torch.Tensor] = None):
+        device = s_M_l.device
+
+        token_embeddings = self.tok_emb_l(s_M_l)  # (b n dim)
         if self.training:
-            token_embeddings = F.dropout(token_embeddings, p=self.emb_dropout)  # to make the LF prediction process more robust during sampling
-        cls_emb = self.class_embedding(class_condition, embed_ind_l.shape[0], device)  # (b 1 dim)
+            token_embeddings = self._token_emb_dropout(s_M_l, token_embeddings, 'lf', p=self.emb_dropout)  # (b n d)
+
+        cls_emb = self.class_embedding(class_condition, s_M_l.shape[0], device)  # (b 1 dim)
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
@@ -141,24 +149,24 @@ class BidirectionalTransformer(nn.Module):
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
         return logits
 
-    def forward_hf(self, embed_ind_l, embed_ind_h, class_condition=None):
+    def forward_hf(self, s_M_l, s_M_h, class_condition=None):
         """
-        embed_ind_l (b n)
-        embed_ind_h (b m); m > n
+        s_M_l (b n)
+        s_M_h (b m); m > n
         """
-        device = embed_ind_l.device
+        device = s_M_l.device
 
-        token_embeddings_l = self.tok_emb_l(embed_ind_l)  # (b n dim)
-        token_embeddings_h = self.tok_emb_h(embed_ind_h)  # (b m dim)
+        token_embeddings_l = self.tok_emb_l(s_M_l)  # (b n dim)
+        token_embeddings_h = self.tok_emb_h(s_M_h)  # (b m dim)
 
         if self.training:
-            token_embeddings_l = F.dropout(token_embeddings_l, p=self.emb_dropout)  # to make the HF prediction process more robust during sampling
-            token_embeddings_h = F.dropout(token_embeddings_h, p=self.emb_dropout)  # to make the HF prediction process more robust during sampling
+            token_embeddings_l = self._token_emb_dropout(s_M_l, token_embeddings_l, 'lf', p=self.emb_dropout)
+            token_embeddings_h = self._token_emb_dropout(s_M_h, token_embeddings_h, 'hf', p=self.emb_dropout)
 
         token_embeddings_l = self.projector(token_embeddings_l, upscale_size=token_embeddings_h.shape[1])  # (b m dim)
         token_embeddings = torch.cat((token_embeddings_l, token_embeddings_h), dim=-1)  # (b m 2*dim)
 
-        cls_emb = self.class_embedding(class_condition, embed_ind_l.shape[0], device)  # (b 1 2*dim)
+        cls_emb = self.class_embedding(class_condition, s_M_l.shape[0], device)  # (b 1 2*dim)
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]
@@ -171,15 +179,15 @@ class BidirectionalTransformer(nn.Module):
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, m, codebook_size)
         return logits
 
-    def forward(self, embed_ind_l, embed_ind_h=None, class_condition: Union[None, torch.Tensor] = None):
+    def forward(self, s_M_l, s_M_h=None, class_condition: Union[None, torch.Tensor] = None):
         """
         embed_ind: indices for embedding; (b n)
         class_condition: (b 1); if None, unconditional sampling is operated.
         """
         if self.kind == 'lf':
-            logits = self.forward_lf(embed_ind_l, class_condition)
+            logits = self.forward_lf(s_M_l, class_condition)
         elif self.kind == 'hf':
-            logits = self.forward_hf(embed_ind_l, embed_ind_h, class_condition)
+            logits = self.forward_hf(s_M_l, s_M_h, class_condition)
         else:
             raise ValueError
         return logits
