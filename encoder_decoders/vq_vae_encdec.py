@@ -121,9 +121,9 @@ class VQVAEEncoder(nn.Module):
         self.encoder = nn.Sequential(*enc_layers)
 
         self.is_num_tokens_updated = False
-        self.register_buffer('num_tokens', torch.zeros(1).int())
-        self.register_buffer('H_prime', torch.zeros(1).int())
-        self.register_buffer('W_prime', torch.zeros(1).int())
+        self.register_buffer('num_tokens', torch.tensor(0))
+        self.register_buffer('H_prime', torch.tensor(0))
+        self.register_buffer('W_prime', torch.tensor(0))
     
     def forward(self, x):
         """
@@ -135,9 +135,9 @@ class VQVAEEncoder(nn.Module):
 
         out = self.encoder(x)  # (b c h w)
         if not self.is_num_tokens_updated:
-            self.H_prime += out.shape[2]
-            self.W_prime += out.shape[3]
-            self.num_tokens += self.H_prime * self.W_prime
+            self.H_prime = torch.tensor(out.shape[2])
+            self.W_prime = torch.tensor(out.shape[3])
+            self.num_tokens = self.H_prime * self.W_prime
             self.is_num_tokens_updated = True
         return out
 

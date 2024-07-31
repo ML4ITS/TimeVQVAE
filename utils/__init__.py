@@ -455,28 +455,6 @@ class SnakeActivation(jit.ScriptModule):
     def forward(self, x):
         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
 
-# class SnakeActivation(jit.ScriptModule):
-#     """
-#     this version allows multiple values of `a` for different channels/num_features
-#     """
-#     def __init__(self, num_features:int, dim:int, a_base=0., learnable=True, a_max=1.):
-#         super().__init__()
-#         assert dim in [1, 2], '`dim` supports 1D and 2D inputs.'
-
-#         if learnable:
-#             if dim == 1:  # (b d l); like time series
-#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1))  # (1 d 1)
-#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
-#             elif dim == 2:  # (b d h w); like 2d images
-#                 a = np.random.uniform(a_base, a_max, size=(1, num_features, 1, 1))  # (1 d 1 1)
-#                 self.a = nn.Parameter(torch.tensor(a, dtype=torch.float32))
-#         else:
-#             self.register_buffer('a', torch.tensor(a_base, dtype=torch.float32))
-
-#     @jit.script_method
-#     def forward(self, x):
-#         return x + (1 / self.a) * torch.sin(self.a * x) ** 2
-
 
 # @torch.jit.script
 # def snakemod(x, alpha, beta):
@@ -488,16 +466,15 @@ class SnakeActivation(jit.ScriptModule):
 #     return x
 
 # class SnakeActivation(nn.Module):
-#     """
-#     proposed by Erlend
-#     """
-#     def __init__(self, channels, *args, **kwargs):
+#     def __init__(self, channels: int, init_min=0.2, init_max=0.6, mod=1.):
 #         super().__init__()
-#         self.alpha = nn.Parameter((torch.rand(1, channels, 1)+0.2)*10.)
-#         self.beta = nn.Parameter(torch.zeros(1, channels, 1))
+#         self.alpha = nn.Parameter(torch.rand(1, channels, 1) * (init_max-init_min) + init_min)
+#         self.beta = nn.Parameter(torch.tensor(0., dtype=self.alpha.dtype))
+#         self.mod = mod
 
-#     def forward(self, x):
-#         return snakemod(x, self.alpha, self.beta)
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         in_beta = self.alpha * torch.arcsinh(self.mod*self.beta)/self.mod
+#         return snakemod(x, self.alpha, in_beta)
     
 
 def str2bool(v):
