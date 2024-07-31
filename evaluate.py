@@ -13,8 +13,8 @@ import wandb
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
-from preprocessing.data_pipeline import build_data_pipeline
-from preprocessing.preprocess_ucr import DatasetImporterUCR
+from preprocessing.data_pipeline import build_data_pipeline, build_custom_data_pipeline
+from preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 import pandas as pd
 
 from evaluation.evaluation import Evaluation
@@ -29,6 +29,7 @@ def load_args():
     parser.add_argument('--gpu_device_idx', default=0, type=int)
     parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Use the fidelity enhancer')
     parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
+    parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     return parser.parse_args()
 
 
@@ -38,6 +39,7 @@ def evaluate(config: dict,
              gpu_device_idx,
              use_fidelity_enhancer:bool,
              feature_extractor_type:str,
+             use_custom_dataset:bool=False,
              rand_seed:Union[int,None]=None,
              ):
     """
@@ -59,7 +61,8 @@ def evaluate(config: dict,
     print('evaluating...')
     evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, 
                             use_fidelity_enhancer=use_fidelity_enhancer,
-                            feature_extractor_type=feature_extractor_type).to(gpu_device_idx)
+                            feature_extractor_type=feature_extractor_type,
+                            use_custom_dataset=use_custom_dataset).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     (_, _, xhat), xhat_R = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     z_train = evaluation.z_train
@@ -69,10 +72,10 @@ def evaluate(config: dict,
     zhat = evaluation.compute_z_gen(xhat)
 
     print('evaluation for unconditional sampling...')
-    IS_mean, IS_std = evaluation.inception_score(xhat)
-    wandb.log({'FID': evaluation.fid_score(z_test, zhat),
-               'IS_mean': IS_mean,
-               'IS_std': IS_std})
+    wandb.log({'FID': evaluation.fid_score(z_test, zhat)})
+    if not use_custom_dataset:
+        IS_mean, IS_std = evaluation.inception_score(xhat)
+        wandb.log({'IS_mean': IS_mean, 'IS_std': IS_std})
 
     evaluation.log_visual_inspection(evaluation.X_train, xhat, 'X_train vs Xhat')
     evaluation.log_visual_inspection(evaluation.X_test, xhat, 'X_test vs Xhat')
@@ -181,12 +184,16 @@ if __name__ == '__main__':
         print('dataset_name:', dataset_name)
 
         # data pipeline
-        dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
-        batch_size = config['dataset']['batch_sizes']['stage2']
-        train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
+        batch_size = config['evaluation']['batch_size']
+        if not args.use_custom_dataset:
+            dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
+            train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
+        else:
+            dataset_importer = DatasetImporterCustom()
+            train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type)
+        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type, args.use_custom_dataset)
 
         # clean memory
         torch.cuda.empty_cache()

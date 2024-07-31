@@ -96,7 +96,10 @@ python stage1.py --use_custom_dataset True --dataset_names custom --gpu_device_i
 ```commandline
 python stage2.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
 ```
-After stage 1 and 2, you can sample synthetic time series with `custom_dataset_sampling.ipynb`.
+```commandline
+python evaluate.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
+```
+Also, you can sample synthetic time series with `custom_dataset_sampling.ipynb`.
 
 
 ## Google Colab
@@ -168,9 +171,9 @@ Its open-source code is available [here](https://github.com/ML4ITS/TimeVQVAE-Ano
 
 
 ## Citation
-[1] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Vector quantized time series generation with a bidirectional prior model." arXiv preprint arXiv:2303.04743 (2023).
+[1] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Vector Quantized Time Series Generation with a Bidirectional Prior Model." International Conference on Artificial Intelligence and Statistics. PMLR, 2023.
 
-[2] Lee, Daesoo, Erlend Aune, and Sara Malacarne. "Masked Generative Modeling with Enhanced Sampling Scheme." arXiv preprint arXiv:2309.07945 (2023).
+<!-- [2] Lee, Daesoo, Erlend Aune, and Sara Malacarne. "Masked Generative Modeling with Enhanced Sampling Scheme." arXiv preprint arXiv:2309.07945 (2023). -->
 
 [3]
 
