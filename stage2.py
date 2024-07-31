@@ -46,8 +46,8 @@ def train_stage2(config: dict,
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
-    input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpStage2(dataset_name, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
+    _, in_channels, input_length = train_data_loader.dataset.X.shape
+    train_exp = ExpStage2(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
     
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params})
@@ -73,7 +73,7 @@ def train_stage2(config: dict,
 
     # test
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, 
+    evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, gpu_device_idx, config, 
                             use_fidelity_enhancer=False,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(gpu_device_idx)
@@ -91,11 +91,11 @@ def train_stage2(config: dict,
 
 
     # evaluation.log_visual_inspection(evaluation.X_train, x_gen, 'X_train vs X_gen')
-    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs Xhat')
     # evaluation.log_visual_inspection(evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
 
     # evaluation.log_pca([z_train, z_gen], ['z_train', 'z_gen'])
-    evaluation.log_pca([z_test, z_gen], ['Z_test', 'Z_gen'])
+    evaluation.log_pca([z_test, z_gen], ['Z_test', 'Zhat'])
     # evaluation.log_pca([z_train, z_test], ['z_train', 'z_test'])
 
     wandb.finish()

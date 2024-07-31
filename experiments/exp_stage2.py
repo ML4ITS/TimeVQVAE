@@ -13,6 +13,7 @@ from utils import linear_warmup_cosine_annealingLR
 class ExpStage2(pl.LightningModule):
     def __init__(self,
                  dataset_name: str,
+                 in_channels:int,
                  input_length: int,
                  config: dict,
                  n_classes: int,
@@ -24,7 +25,7 @@ class ExpStage2(pl.LightningModule):
         self.config = config
         self.use_custom_dataset = use_custom_dataset
 
-        self.maskgit = MaskGIT(dataset_name, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
+        self.maskgit = MaskGIT(dataset_name, in_channels, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
         self.metrics = Metrics(dataset_name, n_classes, feature_extractor_type=feature_extractor_type, use_custom_dataset=use_custom_dataset)
 
     def training_step(self, batch, batch_idx):
@@ -92,17 +93,19 @@ class ExpStage2(pl.LightningModule):
         return {'optimizer': opt, 'lr_scheduler': scheduler}
 
     def _visualize_generated_timeseries(self, xhat_l, xhat_h, xhat):
+        b = 0
+        c = np.random.randint(0, xhat.shape[1])
+        
         n_rows = 3
         fig, axes = plt.subplots(n_rows, 1, figsize=(4, 2*n_rows))
-        fig.suptitle(f'unconditional sampling | step-{self.global_step}')
+        fig.suptitle(f'step-{self.global_step} | channel idx:{c} \n unconditional sampling')
         axes = axes.flatten()
-        b = 0
         axes[0].set_title(r'$\hat{x}_l$ (LF)')
-        axes[0].plot(xhat_l[b,0,:])
+        axes[0].plot(xhat_l[b,c,:])
         axes[1].set_title(r'$\hat{x}_h$ (HF)')
-        axes[1].plot(xhat_h[b, 0, :])
+        axes[1].plot(xhat_h[b,c,:])
         axes[2].set_title(r'$\hat{x}$ (LF+HF)')
-        axes[2].plot(xhat[b, 0, :])
+        axes[2].plot(xhat[b,c,:])
         for ax in axes:
             ax.set_ylim(-4, 4)
         plt.tight_layout()

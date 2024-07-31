@@ -51,7 +51,7 @@ def evaluate(config: dict,
         random.seed(rand_seed)
 
     n_classes = len(np.unique(train_data_loader.dataset.Y))
-    input_length = train_data_loader.dataset.X.shape[-1]
+    _, in_channels, input_length = train_data_loader.dataset.X.shape
     
     # wandb init
     wandb.init(project='TimeVQVAE-evaluation', 
@@ -59,7 +59,7 @@ def evaluate(config: dict,
 
     # unconditional sampling
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, 
+    evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, gpu_device_idx, config, 
                             use_fidelity_enhancer=use_fidelity_enhancer,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(gpu_device_idx)

@@ -50,17 +50,16 @@ We did so becaused the original datasets have two primary issues to be used to t
 - `configs/config.yaml`: configuration for dataset, data loading, optimizer, and models (_i.e.,_ encoder, decoder, vector-quantizer, and MaskGIT)
 - `config/sconfig_cas.yaml`: configuration for running CAS, Classification Accuracy Score (= TSTR, Training on Synthetic and Test on Real).
 
-### Training: Stage1
+### Training: Stage1 and Stage2
 ```commandline
 python stage1.py --dataset_names FordA --gpu_device_idx 0
 ```
-The trained model is saved as `stage1-dataset_name.ckpt` in `saved_models/`.
 
-### Training: Stage2
 ```commandline
 python stage2.py --dataset_names FordA --gpu_device_idx 0
 ```
-The trained model is saved as `stage2-dataset_name.ckpt` in `saved_models/`.
+The trained model is saved in `saved_models/`.
+The details of the logged metrics are documented in `evaluation/README.md`.
 
 
 <!-- :rocket: If you want to run stage 1 and stage 2 at the same time, use the following command. You can specify dataset(s) and a GPU device in the command line for `stages12_all_ucr.py`.
@@ -68,16 +67,16 @@ The trained model is saved as `stage2-dataset_name.ckpt` in `saved_models/`.
 python stage12_all_ucr.py --dataset_names CBF BME --gpu_device_idx 0
 ``` -->
 
-### Run CAS (Classification Accuracy Score)
-
-```commandline
-python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
-```
-
 ### Evaluation
 FID, IS, visual inspection between $p(X)$ and $p_\theta(\hat{X})$ with the corresponding comparison in an evaluation latent space.
 ```commandline
 python evaluate.py --dataset_names FordA --gpu_device_idx 0
+```
+
+### Run CAS (Classification Accuracy Score)
+
+```commandline
+python run_CAS.py  --dataset_names FordA --gpu_device_idx 0
 ```
 
 ### Minimal Code for Sampling

@@ -27,6 +27,7 @@ class MaskGIT(nn.Module):
 
     def __init__(self,
                  dataset_name: str,
+                 in_channels:int,
                  input_length: int,
                  choice_temperatures: dict,
                  T: dict,
@@ -47,6 +48,7 @@ class MaskGIT(nn.Module):
 
         # load the staeg1 model
         self.stage1 = ExpStage1.load_from_checkpoint(os.path.join('saved_models', f'stage1-{dataset_name}.ckpt'), 
+                                                     in_channels=in_channels,
                                                      input_length=input_length, 
                                                      config=config,
                                                      map_location='cpu')
@@ -69,7 +71,7 @@ class MaskGIT(nn.Module):
         self.W_prime_l, self.W_prime_h = self.encoder_l.W_prime.item(), self.encoder_h.W_prime.item()
 
         # transformers / prior models
-        emb_dim = self.config['encoder']['dim']
+        emb_dim = self.config['encoder']['hid_dim']
         self.transformer_l = BidirectionalTransformer('lf',
                                                       self.num_tokens_l,
                                                       config['VQ-VAE']['codebook_sizes'],

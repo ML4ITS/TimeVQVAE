@@ -5,7 +5,7 @@ RUN useradd -m -r -u 1101 newuser  # create user
 RUN python3 -m pip install --upgrade pip
 USER newuser
 
-RUN python3 -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+RUN python3 -m pip install torch==2.2.1 --index-url https://download.pytorch.org/whl/cu118
 RUN python3 -m pip install pytorch-lightning==2.3.1
 
 RUN python3 -m pip install x-transformers==1.31.6

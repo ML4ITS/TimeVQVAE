@@ -41,8 +41,8 @@ def train_stage1(config: dict,
     project_name = 'TimeVQVAE-stage1'
 
     # fit
-    input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpStage1(input_length, config)
+    _, in_channels, input_length = train_data_loader.dataset.X.shape
+    train_exp = ExpStage1(in_channels, input_length, config)
     
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name': dataset_name, 'n_trainable_params:': n_trainable_params})

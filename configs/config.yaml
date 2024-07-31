@@ -1,5 +1,4 @@
 dataset:
-  in_channels: 1
   data_scaling: True
   batch_sizes:
     stage1: 32
@@ -13,23 +12,23 @@ exp_params:
 
 trainer_params:
   max_steps:
-    stage1: 50000  # 50000
-    stage2: 200000  #50000
+    stage1: 50000
+    stage2: 200000
     stage_fid_enhancer: 50000
   val_check_interval:
     stage1: 5000
-    stage2: 20000  #5000
+    stage2: 20000
     stage_fid_enhancer: 2500
 
 encoder:
-  dim: 128
+  init_dim: 4  # initial dimension
+  hid_dim: 128  # hidden dimension in the bottleneck
   n_resnet_blocks: 2
   downsampled_width:
     lf: 8
     hf: 32
 
 decoder:
-  dim: 128
   n_resnet_blocks: 2
 
 VQ-VAE:
