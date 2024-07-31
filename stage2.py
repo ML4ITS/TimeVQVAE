@@ -91,11 +91,11 @@ def train_stage2(config: dict,
 
 
     # evaluation.log_visual_inspection(evaluation.X_train, x_gen, 'X_train vs X_gen')
-    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs X_gen')
+    evaluation.log_visual_inspection(evaluation.X_test, x_gen, 'X_test vs Xhat')
     # evaluation.log_visual_inspection(evaluation.X_train, evaluation.X_test, 'X_train vs X_test')
 
     # evaluation.log_pca([z_train, z_gen], ['z_train', 'z_gen'])
-    evaluation.log_pca([z_test, z_gen], ['Z_test', 'Z_gen'])
+    evaluation.log_pca([z_test, z_gen], ['Z_test', 'Zhat'])
     # evaluation.log_pca([z_train, z_test], ['z_train', 'z_test'])
 
     wandb.finish()
