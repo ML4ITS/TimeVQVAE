@@ -46,8 +46,8 @@ def train_stage2(config: dict,
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
-    input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpStage2(dataset_name, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
+    _, in_channels, input_length = train_data_loader.dataset.X.shape
+    train_exp = ExpStage2(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
     
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params})
@@ -73,7 +73,7 @@ def train_stage2(config: dict,
 
     # test
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, input_length, n_classes, gpu_device_idx, config, 
+    evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, gpu_device_idx, config, 
                             use_fidelity_enhancer=False,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(gpu_device_idx)

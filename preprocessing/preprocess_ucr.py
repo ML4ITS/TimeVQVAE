@@ -85,12 +85,41 @@ class UCRDataset(Dataset):
 
 
 
+# class DatasetImporterCustom(object):
+#     def __init__(self, data_scaling:bool=True, **kwargs):
+#         # training and test datasets
+#         # typically, you'd load the data, for example, using pandas
+#         self.X_train, self.Y_train = np.random.rand(800, 1, 100), np.random.randint(0, 2, size=(800,1))  # X:(n_training_samples, 1, ts_length); 1 denotes a univariate time series; 2 classes in this example
+#         self.X_test, self.Y_test = np.random.rand(200, 1, 100), np.random.randint(0, 2, size=(200,1))  # (n_test_samples, 1, ts_length)
+
+#         if data_scaling:
+#             # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]
+#             mean = np.nanmean(self.X_train)
+#             var = np.nanvar(self.X_train)
+#             self.X_train = (self.X_train - mean) / math.sqrt(var)
+#             self.X_test = (self.X_test - mean) / math.sqrt(var)
+
+#         np.nan_to_num(self.X_train, copy=False)
+#         np.nan_to_num(self.X_test, copy=False)
+        
 class DatasetImporterCustom(object):
     def __init__(self, data_scaling:bool=True, **kwargs):
         # training and test datasets
         # typically, you'd load the data, for example, using pandas
-        self.X_train, self.Y_train = np.random.rand(800, 1, 100), np.random.randint(0, 2, size=(800,1))  # X:(n_training_samples, 1, ts_length); 1 denotes a univariate time series; 2 classes in this example
-        self.X_test, self.Y_test = np.random.rand(200, 1, 100), np.random.randint(0, 2, size=(200,1))  # (n_test_samples, 1, ts_length)
+        
+        # Parameters
+        n_train_samples = 8000
+        n_test_samples = 2000
+        ts_length = 100
+        n_channels = 2
+
+        # Generate sine time series with random phases for training data
+        self.X_train = np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_train_samples, n_channels, 1) * 2 * np.pi)  # (n_training_samples, n_channels, length) = (b c l)
+        self.Y_train = np.random.randint(0, 2, size=(n_train_samples, 1))  # (n_training_samples 1)
+
+        # Generate sine time series with random phases for test data
+        self.X_test = np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_test_samples, n_channels, 1) * 2 * np.pi)  # (n_test_samples, n_channels, length) = (b c l)
+        self.Y_test = np.random.randint(0, 2, size=(n_test_samples, 1))  # (n_test_samples 1)
 
         if data_scaling:
             # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]

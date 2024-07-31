@@ -12,6 +12,7 @@ from utils import compute_downsample_rate, timefreq_to_time, time_to_timefreq, z
 
 class ExpStage1(pl.LightningModule):
     def __init__(self,
+                 in_channels: int,
                  input_length: int,
                  config: dict):
         """
@@ -24,24 +25,24 @@ class ExpStage1(pl.LightningModule):
         self.config = config
 
         self.n_fft = config['VQ-VAE']['n_fft']
-        dim = config['encoder']['dim']
-        in_channels = config['dataset']['in_channels']
+        init_dim = config['encoder']['init_dim']
+        hid_dim = config['encoder']['hid_dim']
         downsampled_width_l = config['encoder']['downsampled_width']['lf']
         downsampled_width_h = config['encoder']['downsampled_width']['hf']
         downsample_rate_l = compute_downsample_rate(input_length, self.n_fft, downsampled_width_l)
         downsample_rate_h = compute_downsample_rate(input_length, self.n_fft, downsampled_width_h)
 
         # encoder
-        self.encoder_l = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], zero_pad_high_freq, self.n_fft, frequency_indepence=False)
-        self.encoder_h = VQVAEEncoder(dim, 2 * in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], zero_pad_low_freq, self.n_fft, frequency_indepence=False)
+        self.encoder_l = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], zero_pad_high_freq, self.n_fft, frequency_indepence=False)
+        self.encoder_h = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], zero_pad_low_freq, self.n_fft, frequency_indepence=False)
 
         # quantizer
-        self.vq_model_l = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
-        self.vq_model_h = VectorQuantize(dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
+        self.vq_model_l = VectorQuantize(hid_dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
+        self.vq_model_h = VectorQuantize(hid_dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # decoder
-        self.decoder_l = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, zero_pad_high_freq, self.n_fft, in_channels, frequency_indepence=False)
-        self.decoder_h = VQVAEDecoder(dim, 2 * in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, zero_pad_low_freq, self.n_fft, in_channels, frequency_indepence=False)
+        self.decoder_l = VQVAEDecoder(hid_dim, 2*in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, zero_pad_high_freq, self.n_fft, in_channels, frequency_indepence=False)
+        self.decoder_h = VQVAEDecoder(hid_dim, 2*in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, zero_pad_low_freq, self.n_fft, in_channels, frequency_indepence=False)
 
     def forward(self, batch, batch_idx, return_x_rec:bool=False):
         """
@@ -55,10 +56,10 @@ class ExpStage1(pl.LightningModule):
 
         # STFT
         in_channels = x.shape[1]
-        xf = time_to_timefreq(x, self.n_fft, in_channels)  # (B, C, H, W)
-        u_l = zero_pad_high_freq(xf)  # (B, C, H, W)
+        xf = time_to_timefreq(x, self.n_fft, in_channels)  # (b c h w)
+        u_l = zero_pad_high_freq(xf)  # (b c h w)
         x_l = F.interpolate(timefreq_to_time(u_l, self.n_fft, in_channels), self.input_length, mode='linear')  # (b c l)
-        u_h = zero_pad_low_freq(xf)  # (B, C, H, W)
+        u_h = zero_pad_low_freq(xf)  # (b c h w)
         x_h = F.interpolate(timefreq_to_time(u_h, self.n_fft, in_channels), self.input_length, mode='linear')  # (b c l)
         
         # LF
@@ -91,7 +92,7 @@ class ExpStage1(pl.LightningModule):
             alpha = 0.7
             n_rows = 3
             fig, axes = plt.subplots(n_rows, 1, figsize=(4, 2*n_rows))
-            plt.suptitle(f'step-{self.global_step} \n (blue:GT, orange:reconstructed)')
+            plt.suptitle(f'step-{self.global_step} | channel idx:{c} \n (blue:GT, orange:reconstructed)')
             axes[0].plot(x_l[b, c].cpu(), alpha=alpha)
             axes[0].plot(xhat_l[b, c].detach().cpu(), alpha=alpha)
             axes[0].set_title(r'$x_l$ (LF)')

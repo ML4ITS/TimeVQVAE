@@ -88,7 +88,8 @@ class VQVAEEncoder(nn.Module):
     """
 
     def __init__(self,
-                 dim: int,
+                 init_dim:int,
+                 hid_dim: int,
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
@@ -109,7 +110,8 @@ class VQVAEEncoder(nn.Module):
         self.pad_func = pad_func
         self.n_fft = n_fft
 
-        d = 4
+
+        d = init_dim
         enc_layers = [VQVAEEncBlock(num_channels, d, frequency_indepence),]
         d *= 2
         for _ in range(int(round(np.log2(downsample_rate))) - 1):
@@ -117,7 +119,7 @@ class VQVAEEncoder(nn.Module):
             for _ in range(n_resnet_blocks):
                 enc_layers.append(ResBlock(d, d, frequency_indepence, dropout=dropout))
             d *= 2
-        enc_layers.append(ResBlock(d//2, dim, frequency_indepence, dropout=dropout))
+        enc_layers.append(ResBlock(d//2, hid_dim, frequency_indepence, dropout=dropout))
         self.encoder = nn.Sequential(*enc_layers)
 
         self.is_num_tokens_updated = False
@@ -148,7 +150,7 @@ class VQVAEDecoder(nn.Module):
     """
 
     def __init__(self,
-                 dim: int,
+                 hid_dim: int,
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
@@ -178,7 +180,7 @@ class VQVAEDecoder(nn.Module):
         if round(np.log2(downsample_rate)) == 0:
             d = int(4 * 2**(int(round(np.log2(downsample_rate)))))
         
-        dec_layers = [ResBlock(dim, d, frequency_indepence, dropout=dropout)]
+        dec_layers = [ResBlock(hid_dim, d, frequency_indepence, dropout=dropout)]
         for _ in range(int(round(np.log2(downsample_rate))) - 1):
             for _ in range(n_resnet_blocks):
                 dec_layers.append(ResBlock(d, d, frequency_indepence, dropout=dropout))
@@ -200,20 +202,3 @@ class VQVAEDecoder(nn.Module):
         out = self.interp(out)  # (b c l)
         out = out + self.linear(out)  # (b c l)
         return out
-        
-
-if __name__ == '__main__':
-    import numpy as np
-
-    x = torch.rand(1, 2, 4, 128)  # (batch, channels, height, width)
-
-    encoder = VQVAEEncoder(dim=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
-    decoder = VQVAEDecoder(dim=32, num_channels=2, downsample_rate=4, n_resnet_blocks=2)
-    decoder.upsample_size = torch.IntTensor(np.array(x.shape[2:]))
-
-    z = encoder(x)
-    x_recons = decoder(z)
-
-    print('x.shape:', x.shape)
-    print('z.shape:', z.shape)
-    print('x_recons.shape:', x_recons.shape)

@@ -36,7 +36,8 @@ class Evaluation(nn.Module):
     - t-SNE
     """
     def __init__(self, 
-                 subset_dataset_name: str, 
+                 dataset_name: str, 
+                 in_channels:int,
                  input_length:int, 
                  n_classes:int, 
                  gpu_device_index:int, 
@@ -47,7 +48,7 @@ class Evaluation(nn.Module):
                  use_custom_dataset:bool=False
                  ):
         super().__init__()
-        self.subset_dataset_name = dataset_name = subset_dataset_name
+        self.dataset_name = dataset_name
         self.device = torch.device(gpu_device_index)
         self.config = config
         self.batch_size = self.config['evaluation']['batch_size']
@@ -55,7 +56,7 @@ class Evaluation(nn.Module):
         assert feature_extractor_type in ['supervised_fcn', 'rocket'], 'unavailable feature extractor type.'
 
         if not use_custom_dataset:
-            self.fcn = load_pretrained_FCN(subset_dataset_name).to(gpu_device_index)
+            self.fcn = load_pretrained_FCN(dataset_name).to(gpu_device_index)
             self.fcn.eval()
         if feature_extractor_type == 'rocket':
             self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
@@ -73,14 +74,14 @@ class Evaluation(nn.Module):
         # load the stage2 model
         self.stage2 = ExpStage2.load_from_checkpoint(os.path.join('saved_models', f'stage2-{dataset_name}.ckpt'), 
                                                       dataset_name=dataset_name, 
+                                                      in_channels=in_channels,
                                                       input_length=input_length, 
                                                       config=config,
                                                       n_classes=n_classes,
                                                       use_fidelity_enhancer=False,
                                                       feature_extractor_type=feature_extractor_type,
                                                       use_custom_dataset=use_custom_dataset,
-                                                      map_location='cpu',
-                                                      strict=False)
+                                                      map_location='cpu',)
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit
         self.stage1 = self.stage2.maskgit.stage1
@@ -296,45 +297,33 @@ class Evaluation(nn.Module):
         return IS_mean, IS_std
 
     def log_visual_inspection(self, X1, X2, title: str, ylim: tuple = (-5, 5), n_plot_samples:int=200, alpha:float=0.1):
+        b, c, l = X1.shape
+
         # `X_test`
         sample_ind = np.random.randint(0, X1.shape[0], n_plot_samples)
-        fig, axes = plt.subplots(2, 1, figsize=(4, 4))
+        fig, axes = plt.subplots(2, c, figsize=(c*4, 4))
         plt.suptitle(title)
-        for i in sample_ind:
-            axes[0].plot(X1[i, 0, :], alpha=alpha, color='C0')
-        # axes[0].set_xticks([])
-        axes[0].set_ylim(*ylim)
-        # axes[0].set_title('test samples')
+        
+        for channel_idx in range(c):
+            # X1
+            for i in sample_ind:
+                axes[0,channel_idx].plot(X1[i, channel_idx, :], alpha=alpha, color='C0')
+            axes[0,channel_idx].set_ylim(*ylim)
+            axes[0,channel_idx].set_title(f'channel idx:{channel_idx}')
 
-        # `X_gen`
-        sample_ind = np.random.randint(0, X2.shape[0], n_plot_samples)
-        for i in sample_ind:
-            axes[1].plot(X2[i, 0, :], alpha=alpha, color='C0')
-        axes[1].set_ylim(*ylim)
-        # axes[1].set_title('generated samples')
+            # X2
+            sample_ind = np.random.randint(0, X2.shape[0], n_plot_samples)
+            for i in sample_ind:
+                axes[1,channel_idx].plot(X2[i, channel_idx, :], alpha=alpha, color='C0')
+            axes[1,channel_idx].set_ylim(*ylim)
+            
+            if channel_idx == 0:
+                axes[0,channel_idx].set_ylabel('X_test')
+                axes[1,channel_idx].set_ylabel('X_gen')
 
         plt.tight_layout()
         wandb.log({f"visual comp ({title})": wandb.Image(plt)})
         plt.close()
-
-    # def log_pca(self, n_plot_samples: int, Z1: np.ndarray, Z2: np.ndarray, labels):
-    #     # sample_ind_test = np.random.choice(range(self.X_test.shape[0]), size=n_plot_samples, replace=True)
-    #     ind1 = np.random.choice(range(Z1.shape[0]), size=n_plot_samples, replace=True)
-    #     ind2 = np.random.choice(range(Z2.shape[0]), size=n_plot_samples, replace=True)
-
-    #     # PCA: latent space
-    #     # pca = PCA(n_components=2, random_state=0)
-    #     Z1_embed = self.pca.transform(Z1[ind1])
-    #     Z2_embed = self.pca.transform(Z2[ind2])
-
-    #     plt.figure(figsize=(4, 4))
-    #     # plt.title("PCA in the representation space by the trained encoder");
-    #     plt.scatter(Z1_embed[:, 0], Z1_embed[:, 1], alpha=0.1, label=labels[0])
-    #     plt.scatter(Z2_embed[:, 0], Z2_embed[:, 1], alpha=0.1, label=labels[1])
-    #     plt.legend()
-    #     plt.tight_layout()
-    #     wandb.log({f"PCA on Z ({labels[0]} vs  {labels[1]})": wandb.Image(plt)})
-    #     plt.close()
 
     def log_pca(self, Zs:List[np.ndarray], labels:List[str], n_plot_samples:int=1000):
         assert len(Zs) == len(labels)
