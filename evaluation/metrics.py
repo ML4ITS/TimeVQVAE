@@ -84,7 +84,8 @@ class Metrics(nn.Module):
         x: (b 1 l)
         """
         if self.feature_extractor_type == 'supervised_fcn':
-            z = self.fcn(torch.from_numpy(x).float().to(self.device), return_feature_vector=True).cpu().detach().numpy()  # (b d)
+            device = next(self.fcn.parameters()).device
+            z = self.fcn(torch.from_numpy(x).float().to(device), return_feature_vector=True).cpu().detach().numpy()  # (b d)
         elif self.feature_extractor_type == 'rocket':
             x = x[:,0,:].astype(float)  # (b l)
             z = apply_kernels(x, self.rocket_kernels)  # (b d)

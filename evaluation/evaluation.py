@@ -302,6 +302,8 @@ class Evaluation(nn.Module):
         # `X_test`
         sample_ind = np.random.randint(0, X1.shape[0], n_plot_samples)
         fig, axes = plt.subplots(2, c, figsize=(c*4, 4))
+        if c == 1:
+            axes = axes[:, np.newaxis]
         plt.suptitle(title)
         
         for channel_idx in range(c):

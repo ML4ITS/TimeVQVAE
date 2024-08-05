@@ -50,7 +50,8 @@ def train_stage2(config: dict,
     train_exp = ExpStage2(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
     
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
-    wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params})
+    wandb_logger = WandbLogger(project=project_name, name=None, 
+                               config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params, 'feature_extractor_type':feature_extractor_type})
     
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
