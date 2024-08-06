@@ -42,6 +42,7 @@ class Metrics(nn.Module):
     - t-SNE
     """
     def __init__(self, 
+                 config:dict,
                  dataset_name: str, 
                  n_classes:int,
                  feature_extractor_type:str, 
@@ -55,7 +56,7 @@ class Metrics(nn.Module):
         self.batch_size = batch_size
 
         # load the numpy matrix of the test samples
-        dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True) if not use_custom_dataset else DatasetImporterCustom()
+        dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset']) if not use_custom_dataset else DatasetImporterCustom(**config['dataset'])
         self.X_train = dataset_importer.X_train  # (b 1 l)
         self.X_test = dataset_importer.X_test  # (b 1 l)
         self.n_classes = n_classes

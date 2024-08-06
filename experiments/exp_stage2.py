@@ -26,7 +26,7 @@ class ExpStage2(pl.LightningModule):
         self.use_custom_dataset = use_custom_dataset
 
         self.maskgit = MaskGIT(dataset_name, in_channels, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
-        self.metrics = Metrics(dataset_name, n_classes, feature_extractor_type=feature_extractor_type, use_custom_dataset=use_custom_dataset)
+        self.metrics = Metrics(config, dataset_name, n_classes, feature_extractor_type=feature_extractor_type, use_custom_dataset=use_custom_dataset)
 
     def training_step(self, batch, batch_idx):
         x, y = batch

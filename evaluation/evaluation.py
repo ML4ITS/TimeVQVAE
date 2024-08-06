@@ -64,11 +64,13 @@ class Evaluation(nn.Module):
             self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
 
         # load the numpy matrix of the test samples
-        dataset_importer = DatasetImporterUCR(dataset_name, data_scaling=True) if not use_custom_dataset else DatasetImporterCustom()
+        dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset']) if not use_custom_dataset else DatasetImporterCustom(**config['dataset'])
         self.X_train = dataset_importer.X_train
         self.X_test = dataset_importer.X_test
         self.Y_train = dataset_importer.Y_train
         self.Y_test = dataset_importer.Y_test
+        self.mean = dataset_importer.mean  # scaling coefficient
+        self.std = dataset_importer.std  # scaling coefficient
 
         self.ts_len = self.X_train.shape[-1]  # time series length
         self.n_classes = len(np.unique(dataset_importer.Y_train))
@@ -110,7 +112,11 @@ class Evaluation(nn.Module):
         self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
 
     @torch.no_grad()
-    def sample(self, n_samples: int, kind: str, class_index:Union[int,None]=None):
+    def sample(self, n_samples: int, kind: str, class_index:Union[int,None]=None, unscale:bool=False):
+        """
+        
+        unscale: unscale the generated sample with percomputed mean and std.
+        """
         assert kind in ['unconditional', 'conditional']
 
         # sampling
@@ -131,6 +137,13 @@ class Evaluation(nn.Module):
             x_new_R = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
             X_new_R.append(x_new_R)
         X_new_R = torch.cat(X_new_R)
+
+        # unscale
+        if unscale:
+            x_new_l = x_new_l*self.std + self.mean
+            x_new_h = x_new_h*self.std + self.mean
+            x_new = x_new*self.std + self.mean
+            X_new_R = X_new_R*self.std + self.mean
 
         return (x_new_l, x_new_h, x_new), X_new_R
 

@@ -38,12 +38,18 @@ class DatasetImporterUCR(object):
         self.Y_train = le.fit_transform(self.Y_train.ravel())[:, None]
         self.Y_test = le.transform(self.Y_test.ravel())[:, None]
 
+        # if data_scaling:
+        #     # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]
+        #     mean = np.nanmean(self.X_train)
+        #     var = np.nanvar(self.X_train)
+        #     self.X_train = (self.X_train - mean) / math.sqrt(var)
+        #     self.X_test = (self.X_test - mean) / math.sqrt(var)
+        self.mean, self.std = 1., 1.
         if data_scaling:
-            # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]
-            mean = np.nanmean(self.X_train)
-            var = np.nanvar(self.X_train)
-            self.X_train = (self.X_train - mean) / math.sqrt(var)
-            self.X_test = (self.X_test - mean) / math.sqrt(var)
+            self.mean = np.nanmean(self.X_train, axis=(0, 2))[None,:,None]  # (1 c 1)
+            self.std = np.nanstd(self.X_train, axis=(0, 2))[None,:,None]  # (1 c 1)
+            self.X_train = (self.X_train - self.mean) / self.std  # (b c l)
+            self.X_test = (self.X_test - self.mean) / self.std  # (b c l)
 
         np.nan_to_num(self.X_train, copy=False)
         np.nan_to_num(self.X_test, copy=False)
@@ -114,19 +120,19 @@ class DatasetImporterCustom(object):
         n_channels = 2
 
         # Generate sine time series with random phases for training data
-        self.X_train = np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_train_samples, n_channels, 1) * 2 * np.pi)  # (n_training_samples, n_channels, length) = (b c l)
+        self.X_train = 2*np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_train_samples, n_channels, 1) * 2 * np.pi)  # (n_training_samples, n_channels, length) = (b c l)
         self.Y_train = np.random.randint(0, 2, size=(n_train_samples, 1))  # (n_training_samples 1)
 
         # Generate sine time series with random phases for test data
-        self.X_test = np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_test_samples, n_channels, 1) * 2 * np.pi)  # (n_test_samples, n_channels, length) = (b c l)
+        self.X_test = 2*np.sin(np.linspace(0, 2 * np.pi, ts_length) + np.random.rand(n_test_samples, n_channels, 1) * 2 * np.pi)  # (n_test_samples, n_channels, length) = (b c l)
         self.Y_test = np.random.randint(0, 2, size=(n_test_samples, 1))  # (n_test_samples 1)
 
+        self.mean, self.std = 1., 1.
         if data_scaling:
-            # following [https://github.com/White-Link/UnsupervisedScalableRepresentationLearningTimeSeries/blob/dcc674541a94ca8a54fbb5503bb75a297a5231cb/ucr.py#L30]
-            mean = np.nanmean(self.X_train)
-            var = np.nanvar(self.X_train)
-            self.X_train = (self.X_train - mean) / math.sqrt(var)
-            self.X_test = (self.X_test - mean) / math.sqrt(var)
+            self.mean = np.nanmean(self.X_train, axis=(0, 2))[None,:,None]  # (1 c 1)
+            self.std = np.nanstd(self.X_train, axis=(0, 2))[None,:,None]  # (1 c 1)
+            self.X_train = (self.X_train - self.mean) / self.std  # (b c l)
+            self.X_test = (self.X_test - self.mean) / self.std  # (b c l)
 
         np.nan_to_num(self.X_train, copy=False)
         np.nan_to_num(self.X_test, copy=False)

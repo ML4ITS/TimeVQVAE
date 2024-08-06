@@ -195,7 +195,7 @@ if __name__ == '__main__':
             dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
             train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
         else:
-            dataset_importer = DatasetImporterCustom()
+            dataset_importer = DatasetImporterCustom(**config['dataset'])
             train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
