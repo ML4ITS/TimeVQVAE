@@ -81,7 +81,8 @@ class Evaluation(nn.Module):
                                                       use_fidelity_enhancer=False,
                                                       feature_extractor_type=feature_extractor_type,
                                                       use_custom_dataset=use_custom_dataset,
-                                                      map_location='cpu',)
+                                                      map_location='cpu',
+                                                      strict=False)
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit
         self.stage1 = self.stage2.maskgit.stage1
@@ -100,8 +101,8 @@ class Evaluation(nn.Module):
         self.z_train = self.compute_z('train')
         self.z_test = self.compute_z('test')
 
-        z_train = remove_outliers(self.z_train)  # only used to fit pca because `def fid_score` already contains `remove_outliers`
-        z_transform_pca = self.pca.fit_transform(z_train)
+        z_test = remove_outliers(self.z_test)  # only used to fit pca because `def fid_score` already contains `remove_outliers`
+        z_transform_pca = self.pca.fit_transform(z_test)
 
         self.xmin_pca, self.xmax_pca = np.min(z_transform_pca[:,0]), np.max(z_transform_pca[:,0])
         self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
