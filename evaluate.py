@@ -104,9 +104,9 @@ def evaluate(config: dict,
         evaluation.log_pca([z_test, z_svq_test], ['Z_test', 'Z_svq_test'])
 
         IS_mean, IS_std = evaluation.inception_score(xhat_R)
-        wandb.log({'FID w/ FE': evaluation.fid_score(z_test, zhat_R),
-                   'IS_mean w/ FE': IS_mean,
-                   'IS_std w/ FE': IS_std})
+        wandb.log({'FID with FE': evaluation.fid_score(z_test, zhat_R),
+                   'IS_mean with FE': IS_mean,
+                   'IS_std with FE': IS_std})
         
         evaluation.log_visual_inspection(evaluation.X_train, xhat_R, 'X_train vs Xhat_R')
         evaluation.log_visual_inspection(evaluation.X_test, xhat_R, 'X_test vs Xhat_R')

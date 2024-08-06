@@ -339,8 +339,8 @@ class Evaluation(nn.Module):
             
             plt.scatter(Z_embed[:, 0], Z_embed[:, 1], alpha=0.1, label=label)
             
-            xpad = (self.xmax_pca - self.xmin_pca) * 0.02
-            ypad = (self.ymax_pca - self.ymin_pca) * 0.02
+            xpad = (self.xmax_pca - self.xmin_pca) * 0.1
+            ypad = (self.ymax_pca - self.ymin_pca) * 0.1
             plt.xlim(self.xmin_pca-xpad, self.xmax_pca+xpad)
             plt.ylim(self.ymin_pca-ypad, self.ymax_pca+ypad)
 
