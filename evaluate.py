@@ -91,6 +91,9 @@ def evaluate(config: dict,
 
     evaluation.log_pca([z_train, z_rec_train], ['Z_train', 'Z_rec_train'])
     evaluation.log_pca([z_test, z_rec_test], ['Z_test', 'Z_rec_test'])
+
+    mdd, acd, sd, kd = evaluation.stat_metrics(evaluation.X_test, xhat)
+    wandb.log({'MDD':mdd, 'ACD':acd, 'SD':sd, 'KD':kd})
     
     if use_fidelity_enhancer:
         z_svq_train, x_prime_train = evaluation.compute_z_svq('train')
@@ -114,6 +117,9 @@ def evaluate(config: dict,
         evaluation.log_pca([zhat_R,], ['Zhat_R',])
         evaluation.log_pca([z_train, zhat_R], ['Z_train', 'Zhat_R'])
         evaluation.log_pca([z_test, zhat_R], ['Z_test', 'Zhat_R'])
+
+        mdd, acd, sd, kd = evaluation.stat_metrics(evaluation.X_test, xhat_R)
+        wandb.log({'MDD with FE':mdd, 'ACD with FE':acd, 'SD with FE':sd, 'KD with FE':kd})
         
     # class-conditional sampling
     print('evaluation for class-conditional sampling...')

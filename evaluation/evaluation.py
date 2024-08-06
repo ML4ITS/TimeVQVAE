@@ -2,7 +2,7 @@
 FID, IS, JS divergence.
 """
 import os
-from typing import List, Union
+from typing import List, Union, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -25,6 +25,8 @@ from utils import time_to_timefreq, timefreq_to_time
 from generators.fidelity_enhancer import FidelityEnhancer
 from evaluation.rocket_functions import generate_kernels, apply_kernels
 from utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
+from evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
+
 
 
 class Evaluation(nn.Module):
@@ -297,6 +299,19 @@ class Evaluation(nn.Module):
         IS_mean, IS_std = calculate_inception_score(p_yx_gen)
         return IS_mean, IS_std
 
+    def stat_metrics(self, x_real:np.ndarray, x_gen:np.ndarray) -> Tuple[float, float, float, float]:
+        """
+        computes the statistical metrices introduced in the paper, [Ang, Yihao, et al. "Tsgbench: Time series generation benchmark." arXiv preprint arXiv:2309.03755 (2023).]
+
+        x_real: (batch 1 length)
+        x_gen: (batch 1 length)
+        """
+        mdd = marginal_distribution_difference(x_real, x_gen)
+        acd = auto_correlation_difference(x_real, x_gen)
+        sd = skewness_difference(x_real, x_gen)
+        kd = kurtosis_difference(x_real, x_gen)
+        return mdd, acd, sd, kd
+    
     def log_visual_inspection(self, X1, X2, title: str, ylim: tuple = (-5, 5), n_plot_samples:int=200, alpha:float=0.1):
         b, c, l = X1.shape
 
