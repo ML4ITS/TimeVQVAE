@@ -1,4 +1,5 @@
 import os
+import copy
 
 import matplotlib.pyplot as plt
 import torch.nn
@@ -21,6 +22,7 @@ from utils import freeze, zero_pad_low_freq, zero_pad_high_freq, linear_warmup_c
 class ExpFidelityEnhancer(pl.LightningModule):
     def __init__(self,
                  dataset_name: str,
+                 in_channels:int,
                  input_length: int,
                  config: dict,
                  n_classes: int,
@@ -29,16 +31,16 @@ class ExpFidelityEnhancer(pl.LightningModule):
                  ):
         super().__init__()
         self.config = config
-        self.in_channels = config['dataset']['in_channels']
         self.use_custom_dataset = use_custom_dataset
         self.n_fft = config['VQ-VAE']['n_fft']
         self.tau_search_rng = config['fidelity_enhancer']['tau_search_rng']
 
         # FE
-        self.fidelity_enhancer = FidelityEnhancer(input_length, 1, config)
+        self.fidelity_enhancer = FidelityEnhancer(input_length, in_channels, config)
 
         # load the stage2 model
         exp_maskgit_config = {'dataset_name':dataset_name, 
+                              'in_channels':in_channels,
                               'input_length':input_length, 
                               'config':config, 
                               'n_classes':n_classes, 
@@ -63,7 +65,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
         freeze(self.minirocket)
         self.percept_loss_weight = config['fidelity_enhancer']['percept_loss_weight']
 
-        self.metrics = Metrics(dataset_name, n_classes, feature_extractor_type, use_custom_dataset=use_custom_dataset)
+        self.metrics = Metrics(config, dataset_name, n_classes, feature_extractor_type, use_custom_dataset=use_custom_dataset)
 
     @torch.no_grad()
     def search_optimal_tau(self, 
@@ -109,11 +111,11 @@ class ExpFidelityEnhancer(pl.LightningModule):
             
             fid = self.metrics.fid_score(Zhat, Z_prime)
             fids.append(fid)
-            print(f'tau:{tau} | fid:{round(int(fid))}')
+            print(f'tau:{tau} | fid:{round(fid,4)}')
 
             # ====
             fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
-            fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid)})')
+            fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid,4)})')
             axes[0].set_title('xhat')
             axes[0].plot(Xhat[:100,0,:].T, color='C0', alpha=0.2)
             axes[1].set_title('x`')
@@ -131,7 +133,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             plt.close()
             # plt.show()
             # ====
-        print('{tau:fid} :', {tau: round(float(fid),1) for tau, fid in zip(self.tau_search_rng, fids)})
+        print('{tau:fid} :', {tau: round(float(fid),4) for tau, fid in zip(self.tau_search_rng, fids)})
         optimal_idx = np.argmin(fids)
         optimal_tau = self.tau_search_rng[optimal_idx]
         print('** optimal_tau **:', optimal_tau)
@@ -250,7 +252,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             axes[6].set_title(r'$x$')
             axes[6].plot(x[b_, 0, :])
 
-            axes[7].set_title(fr'$x^\prime$ ($\tau$={round(tau, 2)})')
+            axes[7].set_title(fr'$x^\prime$ ($\tau$={round(tau, 5)})')
             axes[7].plot(xprime[b_, 0, :])
 
             axes[8].set_title(r'FE($x^\prime$)')

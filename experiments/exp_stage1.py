@@ -41,8 +41,8 @@ class ExpStage1(pl.LightningModule):
         self.vq_model_h = VectorQuantize(hid_dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # decoder
-        self.decoder_l = VQVAEDecoder(hid_dim, 2*in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, zero_pad_high_freq, self.n_fft, in_channels, frequency_indepence=False)
-        self.decoder_h = VQVAEDecoder(hid_dim, 2*in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, zero_pad_low_freq, self.n_fft, in_channels, frequency_indepence=False)
+        self.decoder_l = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, zero_pad_high_freq, self.n_fft, in_channels, frequency_indepence=False)
+        self.decoder_h = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, zero_pad_low_freq, self.n_fft, in_channels, frequency_indepence=False)
 
     def forward(self, batch, batch_idx, return_x_rec:bool=False):
         """

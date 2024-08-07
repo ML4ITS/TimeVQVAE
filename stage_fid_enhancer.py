@@ -42,8 +42,8 @@ def train_stage_fid_enhancer(config: dict,
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
-    input_length = train_data_loader.dataset.X.shape[-1]
-    train_exp = ExpFidelityEnhancer(dataset_name, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
+    _, in_channels, input_length = train_data_loader.dataset.X.shape
+    train_exp = ExpFidelityEnhancer(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
 
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name':dataset_name, 'n_trainable_params':n_trainable_params})

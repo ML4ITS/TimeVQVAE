@@ -5,6 +5,7 @@ from typing import Tuple, Union
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import numpy as np
 
 from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
@@ -90,6 +91,7 @@ class Metrics(nn.Module):
         elif self.feature_extractor_type == 'rocket':
             x = x[:,0,:].astype(float)  # (b l)
             z = apply_kernels(x, self.rocket_kernels)  # (b d)
+            z = F.normalize(torch.from_numpy(z), p=2, dim=1).numpy()
         else:
             raise ValueError
         return z

@@ -156,6 +156,7 @@ class Evaluation(nn.Module):
         elif self.feature_extractor_type == 'rocket':
             x = x[:,0,:]  # (b l)
             z = apply_kernels(x, self.rocket_kernels)
+            z = F.normalize(torch.from_numpy(z), p=2, dim=1).numpy()
         else:
             raise ValueError
         return z

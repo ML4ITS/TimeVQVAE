@@ -150,6 +150,7 @@ class VQVAEDecoder(nn.Module):
     """
 
     def __init__(self,
+                 init_dim:int,
                  hid_dim: int,
                  num_channels: int,
                  downsample_rate: int,
@@ -176,10 +177,9 @@ class VQVAEDecoder(nn.Module):
         kernel_size = (1, 4) if frequency_indepence else (3, 4)
         padding = (0, 1) if frequency_indepence else (1, 1)
         
-        d = int(4 * 2**(int(round(np.log2(downsample_rate))) - 1))  # enc_out_dim == dec_in_dim
+        d = int(init_dim * 2**(int(round(np.log2(downsample_rate))) - 1))  # enc_out_dim == dec_in_dim
         if round(np.log2(downsample_rate)) == 0:
-            d = int(4 * 2**(int(round(np.log2(downsample_rate)))))
-        
+            d = int(init_dim * 2**(int(round(np.log2(downsample_rate)))))
         dec_layers = [ResBlock(hid_dim, d, frequency_indepence, dropout=dropout)]
         for _ in range(int(round(np.log2(downsample_rate))) - 1):
             for _ in range(n_resnet_blocks):
