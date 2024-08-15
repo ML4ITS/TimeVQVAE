@@ -191,7 +191,7 @@ class VQVAEDecoder(nn.Module):
         self.decoder = nn.Sequential(*dec_layers)
 
         self.interp = nn.Upsample(input_length, mode='linear')
-        self.linear = nn.Linear(input_length, input_length)
+        # self.linear = nn.Linear(input_length, input_length)  # though helpful, it consumes too much memory for long sequences
         
 
     def forward(self, x):
@@ -200,5 +200,5 @@ class VQVAEDecoder(nn.Module):
         out = timefreq_to_time(out, self.n_fft, self.x_channels)  # (b c l)
 
         out = self.interp(out)  # (b c l)
-        out = out + self.linear(out)  # (b c l)
+        # out = out + self.linear(out)  # (b c l)
         return out
