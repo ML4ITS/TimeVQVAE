@@ -33,6 +33,6 @@ def build_custom_data_pipeline(batch_size, dataset_importer:DatasetImporterCusto
         return DataLoader(custom_dataset, batch_size, num_workers=num_workers, shuffle=True, drop_last=False, pin_memory=True)  # `drop_last=False` due to some datasets with a very small dataset size.
     elif kind == 'test':
         custom_dataset = CustomDataset('test', dataset_importer)
-        return DataLoader(custom_dataset, batch_size, num_workers=num_workers, shuffle=True, drop_last=False, pin_memory=True)  # `drop_last=False` due to some datasets with a very small dataset size.
+        return DataLoader(custom_dataset, batch_size, num_workers=num_workers, shuffle=False, drop_last=False, pin_memory=True)  # `drop_last=False` due to some datasets with a very small dataset size.
     else:
         raise ValueError
