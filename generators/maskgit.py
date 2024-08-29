@@ -117,16 +117,16 @@ class MaskGIT(nn.Module):
         """
         if isinstance(class_condition, type(None)):
             # unconditional 
-            logits_null = transformer(*s_in, class_condition=None)  # (b n k)
+            logits_null = transformer(*s_in, class_condition=None, ids_restore=ids_restore)  # (b n k)
             return logits_null
         else:
             # class-conditional
             if self.cfg_scale == 1.0:
-                logits = transformer(*s_in, class_condition=class_condition)  # (b n k)
+                logits = transformer(*s_in, class_condition=class_condition, ids_restore=ids_restore)  # (b n k)
             else:
                 # with CFG
-                logits_null = transformer(*s_in, class_condition=None)
-                logits = transformer(*s_in, class_condition=class_condition)  # (b n k)
+                logits_null = transformer(*s_in, class_condition=None, ids_restore=ids_restore)
+                logits = transformer(*s_in, class_condition=class_condition, ids_restore=ids_restore)  # (b n k)
                 logits = logits_null + self.cfg_scale * (logits - logits_null)
             return logits
 
@@ -134,10 +134,10 @@ class MaskGIT(nn.Module):
         """
         Perform per-sample random masking by per-sample shuffling.
         Per-sample shuffling is done by argsort random noise.
-        x: [N, L, D], sequence = (b n d)
+        x: [N, L], sequence = (b n)
         """
-        N, L, D = x.shape  # batch, length, dim (N, L, D)
-        len_keep = int(L * (1 - mask_ratio))  # Number of patches to keep
+        N, L = x.shape  # batch, length (N, L)
+        len_keep = max(round(L * (1 - mask_ratio)), 1)  # Number of patches to keep; keep at least 1 token
 
         noise = torch.rand(N, L, device=x.device)  # Generate random noise for masking (N, L)
 
@@ -147,7 +147,7 @@ class MaskGIT(nn.Module):
 
         # Keep the first subset
         ids_keep = ids_shuffle[:, :len_keep]  # Indices to keep (N, len_keep)
-        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))  # Gather kept patches (N, len_keep, D)
+        x_masked = torch.gather(x, dim=1, index=ids_keep)  # Gather kept patches (N, len_keep)
 
         # Generate the binary mask: 0 is keep, 1 is remove
         mask = torch.ones([N, L], device=x.device)  # Initialize mask with ones (N, L)
@@ -155,7 +155,7 @@ class MaskGIT(nn.Module):
         # Unshuffle to get the binary mask
         mask = torch.gather(mask, dim=1, index=ids_restore)  # Unshuffle mask to match original input order (N, L)
 
-        return x_masked, mask, ids_restore
+        return x_masked, mask.bool(), ids_restore.long()
 
     def forward(self, x, y):
         """
@@ -173,32 +173,42 @@ class MaskGIT(nn.Module):
         _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l)  # (b n)
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h)  # (b m)
 
-        # # mask tokens
-        # s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['lf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
-        # s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['hf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
-
         # mask tokens
-        masking_ratio = np.random.uniform(0., 1., (b,))
-        s_l_M, mask, ids_restore = self.random_masking(s_l, masking_ratio)  # (b, len_keep, d), (b n), (b n)
-        
-
-
+        masking_ratio = np.random.uniform(0., 1.)
+        s_l_M, mask_l, ids_restore_l = self.random_masking(s_l, masking_ratio)  # (b, len_keep, d), (b n), (b n)
+        s_h_M, mask_h, ids_restore_h = self.random_masking(s_h, masking_ratio)  # (b, len_keep, d), (b n), (b n)
 
         # prediction
-        logits_l = self.masked_prediction(self.transformer_l, ids_restore, y, s_l_M,)  # (b n k)
-        logits_h = self.masked_prediction(self.transformer_h, ids_restore, y, s_l_M, s_h_M)
-        
+        logits_l = self.masked_prediction(self.transformer_l, ids_restore_l, y, s_l_M)  # (b n k)
+        logits_h = self.masked_prediction(self.transformer_h, ids_restore_h, y, s_l_M, s_h_M)
+
         # maksed prediction loss
-        logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
-        s_l_on_mask = s_l[~mask_l]  # (bm) where m < n
+        logits_l_on_mask = logits_l[mask_l]  # (bm k) where m < n
+        s_l_on_mask = s_l[mask_l]  # (bm) where m < n
+        # print('logits_l.shape:', logits_l.shape)
+        # print('mask_l.shape:', mask_l.shape)
+        # print('logits_l_on_mask.shape:', logits_l_on_mask.shape)
+        # print('s_l_on_mask.shape:', s_l_on_mask.shape)
         mask_pred_loss_l = F.cross_entropy(logits_l_on_mask.float(), s_l_on_mask.long())
         
-        logits_h_on_mask = logits_h[~mask_h]  # (bm k) where m < n
-        s_h_on_mask = s_h[~mask_h]  # (bm) where m < n
+        logits_h_on_mask = logits_h[mask_h]  # (bm k) where m < n
+        s_h_on_mask = s_h[mask_h]  # (bm) where m < n
         mask_pred_loss_h = F.cross_entropy(logits_h_on_mask.float(), s_h_on_mask.long())
 
         mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
-        return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)
+        return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)        
+
+        # # maksed prediction loss
+        # logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
+        # s_l_on_mask = s_l[~mask_l]  # (bm) where m < n
+        # mask_pred_loss_l = F.cross_entropy(logits_l_on_mask.float(), s_l_on_mask.long())
+        
+        # logits_h_on_mask = logits_h[~mask_h]  # (bm k) where m < n
+        # s_h_on_mask = s_h[~mask_h]  # (bm) where m < n
+        # mask_pred_loss_h = F.cross_entropy(logits_h_on_mask.float(), s_h_on_mask.long())
+
+        # mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
+        # return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)
     
     def gamma_func(self, mode="cosine"):
         if mode == "linear":
