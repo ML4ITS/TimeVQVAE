@@ -35,7 +35,8 @@ class BidirectionalTransformer(nn.Module):
                  codebook_sizes: dict,
                  embed_dim: int,
                  hidden_dim: int,
-                 n_layers: int,
+                 n_enc_layers: int,
+                 n_dec_layers: int,
                  heads: int,
                  ff_mult: int,
                  use_rmsnorm: bool,
@@ -73,13 +74,16 @@ class BidirectionalTransformer(nn.Module):
 
         # token embeddings
         self.tok_emb_l = nn.Embedding(codebook_sizes['lf'] + 1, embed_dim)  # `+1` is for mask-token
+        self.mask_token_l = self.tok_emb_l.weight[self.mask_token_ind['lf'],:][None,None,:]  # (1 1 d)
         if kind == 'hf':
             self.tok_emb_h = nn.Embedding(codebook_sizes['hf'] + 1, embed_dim)  # `+1` is for mask-token
+            self.mask_token_h = self.tok_emb_h.weight[self.mask_token_ind['hf'],:][None,None,:]  # (1 1 d)
 
         # transformer
         self.pos_emb = nn.Embedding(self.num_tokens + 1, in_dim)
+        self.decoder_pos_embed = nn.Parameter(torch.randn(1, self.num_tokens+1, hidden_dim))
         self.class_condition_emb = nn.Embedding(n_classes + 1, in_dim)  # `+1` is for no-condition
-        self.blocks = ContinuousTransformerWrapper(dim_in=in_dim,
+        self.enc_blocks = ContinuousTransformerWrapper(dim_in=in_dim,
                                                    dim_out=in_dim,
                                                    max_seq_len=self.num_tokens + 1,
                                                    use_abs_pos_emb=False,
@@ -87,7 +91,24 @@ class BidirectionalTransformer(nn.Module):
                                                    attn_layers=TFEncoder(
                                                        pre_norm=True,
                                                        dim=hidden_dim,
-                                                       depth=n_layers,
+                                                       depth=n_enc_layers,
+                                                       heads=heads,
+                                                       attn_dim_head=64,
+                                                       use_rmsnorm=use_rmsnorm,
+                                                       ff_mult=ff_mult,
+                                                       layer_dropout=model_dropout,
+                                                       attn_dropout=model_dropout, 
+                                                       ff_dropout=model_dropout,
+                                                   ))
+        self.dec_blocks = ContinuousTransformerWrapper(dim_in=in_dim,
+                                                   dim_out=in_dim,
+                                                   max_seq_len=self.num_tokens + 1,
+                                                   use_abs_pos_emb=False,
+                                                   post_emb_norm=True,
+                                                   attn_layers=TFEncoder(
+                                                       pre_norm=True,
+                                                       dim=hidden_dim,
+                                                       depth=n_dec_layers,
                                                        heads=heads,
                                                        attn_dim_head=64,
                                                        use_rmsnorm=use_rmsnorm,
@@ -97,7 +118,7 @@ class BidirectionalTransformer(nn.Module):
                                                        ff_dropout=model_dropout,
                                                    ))
         self.pred_head = nn.Sequential(*[
-            nn.Linear(in_features=in_dim, out_features=out_dim),
+            nn.Linear(in_features=hidden_dim, out_features=out_dim),
             nn.GELU(),
             nn.LayerNorm(out_dim, eps=1e-12)
         ])
@@ -129,7 +150,26 @@ class BidirectionalTransformer(nn.Module):
         token_emb = torch.where(mask_ind, token_emb, token_emb_dropout)  # (b n d)
         return token_emb
 
-    def forward_lf(self, s_M_l, class_condition: Union[None, torch.Tensor] = None):
+    def forward_decoder(self, x, ids_restore, mask_token):
+        """
+        x: (b, n, d)
+        """
+        # Append mask tokens to sequence
+        mask_tokens = mask_token.repeat(x.shape[0], ids_restore.shape[1] + 1 - x.shape[1], 1)  # Create mask tokens (b, num_patches + 1 - n, decoder_embed_dim)
+        x_ = torch.cat([x[:, 1:, :], mask_tokens], dim=1)  # Concatenate mask tokens (without class token) (b, num_patches, decoder_embed_dim)
+        x_ = torch.gather(x_, dim=1, index=ids_restore.unsqueeze(-1).repeat(1, 1, x.shape[2]))  # Unshuffle (b, num_patches, decoder_embed_dim)
+        x = torch.cat([x[:, :1, :], x_], dim=1)  # Append class token back (b, num_patches + 1, decoder_embed_dim)
+
+        # Add positional embedding
+        n = x.shape[1]
+        x = x + self.decoder_pos_embed[:,:n,:]
+
+        # Apply Transformer blocks
+        x = self.dec_blocks(x)
+        return x
+    
+    def forward_lf(self, s_M_l, class_condition:Union[None,torch.Tensor]=None, ids_restore=None):
+        assert ids_restore, 'ids_restore must be given.'
         device = s_M_l.device
 
         token_embeddings = self.tok_emb_l(s_M_l)  # (b n dim)
@@ -142,18 +182,22 @@ class BidirectionalTransformer(nn.Module):
         position_embeddings = self.pos_emb.weight[:n, :]
         embed = token_embeddings + position_embeddings  # (b, n, dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
-        embed = self.blocks(embed)  # (b, 1+n, dim)
+        
+        embed = self.enc_blocks(embed)
+        embed = self.forward_decoder(embed, ids_restore, self.mask_token_l)
+
         embed = self.pred_head(embed)[:, 1:, :]  # (b, n, dim)
 
         logits = torch.matmul(embed, self.tok_emb_l.weight.T) + self.bias  # (b, n, codebook_size+1)
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
         return logits
 
-    def forward_hf(self, s_M_l, s_M_h, class_condition=None):
+    def forward_hf(self, s_M_l, s_M_h, class_condition=None, ids_restore=None):
         """
         s_M_l (b n)
         s_M_h (b m); m > n
         """
+        assert ids_restore, 'ids_restore must be given.'
         device = s_M_l.device
 
         token_embeddings_l = self.tok_emb_l(s_M_l)  # (b n dim)
@@ -172,7 +216,10 @@ class BidirectionalTransformer(nn.Module):
         position_embeddings = self.pos_emb.weight[:n, :]
         embed = token_embeddings + position_embeddings
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
-        embed = self.blocks(embed)  # (b, 1+m, 2*dim)
+        
+        embed = self.enc_blocks(embed)
+        embed = self.forward_decoder(embed, ids_restore, self.mask_token_l)
+
         embed = self.pred_head(embed)[:, 1:, :]  # (b, m, dim)
 
         logits = torch.matmul(embed, self.tok_emb_h.weight.T) + self.bias  # (b, m, codebook_size+1)

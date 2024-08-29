@@ -109,7 +109,7 @@ class ExpStage1(pl.LightningModule):
             axes[2].set_ylim(-4, 4)
 
             plt.tight_layout()
-            wandb.log({"x vs x_rec (val)": wandb.Image(plt)})
+            self.logger.log_image(key='x vs x_rec (val)', images=[wandb.Image(plt),])
             plt.close()
 
         return recons_loss, vq_losses, perplexities

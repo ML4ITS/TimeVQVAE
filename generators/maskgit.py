@@ -111,7 +111,7 @@ class MaskGIT(nn.Module):
         zq, s, _, _ = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
         return zq, s
     
-    def masked_prediction(self, transformer, class_condition, *s_in):
+    def masked_prediction(self, transformer, ids_restore, class_condition, *s_in):
         """
         masked prediction with classifier-free guidance
         """
@@ -130,6 +130,33 @@ class MaskGIT(nn.Module):
                 logits = logits_null + self.cfg_scale * (logits - logits_null)
             return logits
 
+    def random_masking(self, x, mask_ratio):
+        """
+        Perform per-sample random masking by per-sample shuffling.
+        Per-sample shuffling is done by argsort random noise.
+        x: [N, L, D], sequence = (b n d)
+        """
+        N, L, D = x.shape  # batch, length, dim (N, L, D)
+        len_keep = int(L * (1 - mask_ratio))  # Number of patches to keep
+
+        noise = torch.rand(N, L, device=x.device)  # Generate random noise for masking (N, L)
+
+        # Sort noise for each sample
+        ids_shuffle = torch.argsort(noise, dim=1)  # Ascend: small is keep, large is remove (N, L)
+        ids_restore = torch.argsort(ids_shuffle, dim=1)  # Restore indices after shuffling (N, L)
+
+        # Keep the first subset
+        ids_keep = ids_shuffle[:, :len_keep]  # Indices to keep (N, len_keep)
+        x_masked = torch.gather(x, dim=1, index=ids_keep.unsqueeze(-1).repeat(1, 1, D))  # Gather kept patches (N, len_keep, D)
+
+        # Generate the binary mask: 0 is keep, 1 is remove
+        mask = torch.ones([N, L], device=x.device)  # Initialize mask with ones (N, L)
+        mask[:, :len_keep] = 0  # Set first len_keep entries to 0
+        # Unshuffle to get the binary mask
+        mask = torch.gather(mask, dim=1, index=ids_restore)  # Unshuffle mask to match original input order (N, L)
+
+        return x_masked, mask, ids_restore
+
     def forward(self, x, y):
         """
         x: (B, C, L)
@@ -140,18 +167,26 @@ class MaskGIT(nn.Module):
         self.vq_model_l.eval()
         self.encoder_h.eval()
         self.vq_model_h.eval()
-        
+
+        b = x.shape[0]
         device = x.device
         _, s_l = self.encode_to_z_q(x, self.encoder_l, self.vq_model_l)  # (b n)
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h)  # (b m)
 
+        # # mask tokens
+        # s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['lf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+        # s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['hf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+
         # mask tokens
-        s_l_M, mask_l = self._randomly_mask_tokens(s_l, self.mask_token_ids['lf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
-        s_h_M, mask_h = self._randomly_mask_tokens(s_h, self.mask_token_ids['hf'], device)  # (b n), (b n) where 0 for masking and 1 for un-masking
+        masking_ratio = np.random.uniform(0., 1., (b,))
+        s_l_M, mask, ids_restore = self.random_masking(s_l, masking_ratio)  # (b, len_keep, d), (b n), (b n)
+        
+
+
 
         # prediction
-        logits_l = self.masked_prediction(self.transformer_l, y, s_l_M)  # (b n k)
-        logits_h = self.masked_prediction(self.transformer_h, y, s_l_M, s_h_M)
+        logits_l = self.masked_prediction(self.transformer_l, ids_restore, y, s_l_M,)  # (b n k)
+        logits_h = self.masked_prediction(self.transformer_h, ids_restore, y, s_l_M, s_h_M)
         
         # maksed prediction loss
         logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
@@ -164,28 +199,6 @@ class MaskGIT(nn.Module):
 
         mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
         return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)
-
-    def _randomly_mask_tokens(self, s, mask_token_id, device):
-        """
-        s: token set
-        """
-        b, n = s.shape
-        
-        # sample masking indices
-        ratio = np.random.uniform(0, 1, (b,))  # (b,)
-        n_unmasks = np.floor(self.gamma(ratio) * n)  # (b,)
-        n_unmasks = np.clip(n_unmasks, a_min=0, a_max=n-1).astype(int)  # ensures that there's at least one masked token
-        rand = torch.rand((b, n), device=device)  # (b n)
-        mask = torch.zeros((b, n), dtype=torch.bool, device=device)  # (b n)
-
-        for i in range(b):
-            ind = rand[i].topk(n_unmasks[i], dim=-1).indices
-            mask[i].scatter_(dim=-1, index=ind, value=True)
-
-        # mask the token set
-        masked_indices = mask_token_id * torch.ones((b, n), device=device)  # (b n)
-        s_M = mask * s + (~mask) * masked_indices  # (b n); `~` reverses bool-typed data
-        return s_M.long(), mask
     
     def gamma_func(self, mode="cosine"):
         if mode == "linear":
@@ -232,31 +245,6 @@ class MaskGIT(nn.Module):
             masking[i, masking_ind[i].long()] = 1.
         masking = masking.bool()
         return masking
-
-    # def mask_by_random_topk(self, mask_len, probs, temperature=1.0, device='cpu'):
-    #     """
-    #     mask_len: (b 1)
-    #     probs: (b n); also for the confidence scores
-    #     """
-    #     def log(t, eps=1e-20):
-    #         return torch.log(t.clamp(min=eps))
-    #
-    #     def gumbel_noise(t):
-    #         """
-    #         Gumbel max trick: https://neptune.ai/blog/gumbel-softmax-loss-function-guide-how-to-implement-it-in-pytorch
-    #         """
-    #         noise = torch.zeros_like(t).uniform_(0, 1)
-    #         return -log(-log(noise))
-    #
-    #     confidence = torch.log(probs) + temperature * gumbel_noise(probs).to(device)  # Gumbel max trick
-    #     sorted_confidence, _ = torch.sort(confidence, dim=-1)
-    #     # Obtains cut off threshold given the mask lengths.
-    #     cut_off = torch.take_along_dim(sorted_confidence, mask_len.to(torch.long), dim=-1)
-    #     # Masks tokens with lower confidence.
-    #     masking = (confidence < cut_off)
-    #     # NB! it can mask more than mask_len when there are several confidence scores identical to cut_off.
-    #     # the advantage is that we can sample all the lowest scores at once.
-    #     return masking
 
     def first_pass(self,
                    s_l: torch.Tensor,
