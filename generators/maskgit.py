@@ -151,7 +151,7 @@ class MaskGIT(nn.Module):
 
         # prediction
         logits_l = self.masked_prediction(self.transformer_l, y, s_l_M)  # (b n k)
-        logits_h = self.masked_prediction(self.transformer_h, y, s_l_M, s_h_M)
+        logits_h = self.masked_prediction(self.transformer_h, y, s_l, s_h_M)
         
         # maksed prediction loss
         logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n

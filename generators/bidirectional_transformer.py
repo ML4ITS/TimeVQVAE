@@ -149,24 +149,24 @@ class BidirectionalTransformer(nn.Module):
         logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
         return logits
 
-    def forward_hf(self, s_M_l, s_M_h, class_condition=None):
+    def forward_hf(self, s_l, s_M_h, class_condition=None):
         """
         s_M_l (b n)
         s_M_h (b m); m > n
         """
-        device = s_M_l.device
+        device = s_l.device
 
-        token_embeddings_l = self.tok_emb_l(s_M_l)  # (b n dim)
+        token_embeddings_l = self.tok_emb_l(s_l)  # (b n dim)
         token_embeddings_h = self.tok_emb_h(s_M_h)  # (b m dim)
 
         if self.training:
-            token_embeddings_l = self._token_emb_dropout(s_M_l, token_embeddings_l, 'lf', p=self.emb_dropout)
+            token_embeddings_l = self._token_emb_dropout(s_l, token_embeddings_l, 'lf', p=self.emb_dropout)
             token_embeddings_h = self._token_emb_dropout(s_M_h, token_embeddings_h, 'hf', p=self.emb_dropout)
 
         token_embeddings_l = self.projector(token_embeddings_l, upscale_size=token_embeddings_h.shape[1])  # (b m dim)
         token_embeddings = torch.cat((token_embeddings_l, token_embeddings_h), dim=-1)  # (b m 2*dim)
 
-        cls_emb = self.class_embedding(class_condition, s_M_l.shape[0], device)  # (b 1 2*dim)
+        cls_emb = self.class_embedding(class_condition, s_l.shape[0], device)  # (b 1 2*dim)
 
         n = token_embeddings.shape[1]
         position_embeddings = self.pos_emb.weight[:n, :]

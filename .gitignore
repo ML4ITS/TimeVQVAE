@@ -137,3 +137,4 @@ datasets/UCRArchive_2018_resplit
 dataset_split.ipynb
 .vscode/
 saved_models*
+.DS_Store
