@@ -182,8 +182,9 @@ class MaskGIT(nn.Module):
 
         # mask tokens
         r = np.random.uniform(0., 1.)
+        # r = np.random.uniform(1., 1.)  # no masking test; computational time should be longer with this
         gamma = self.gamma_func()
-        masking_ratio = gamma(r)
+        masking_ratio = gamma(r)  # {1: no masking}
         (s_l_M, _), mask_l, ids_restore_l = self.random_masking(s_l, masking_ratio, 'lf')  # (b, len_keep), (b n), (b n)
         (_, s_h_M_dim_kept), mask_h, ids_restore_h = self.random_masking(s_h, masking_ratio, 'hf')  # (b, n), (b n), (b n)
 
@@ -191,23 +192,9 @@ class MaskGIT(nn.Module):
         logits_l = self.masked_prediction(self.transformer_l, mask_l, ids_restore_l, y, s_l_M)  # (b n k)
         logits_h = self.masked_prediction(self.transformer_h, mask_h, ids_restore_h, y, s_l, s_h_M_dim_kept)
 
-        # print('s_l.shape:', s_l.shape)
-        # print('s_l_M.shape:', s_l_M.shape)
-        # print('logits_l.shape:', logits_l.shape)
-        # print('mask_l.shape:', mask_l.shape)
-
-        # print('s_h.shape:', s_h.shape)
-        # print('s_h_M.shape:', s_h_M.shape)
-        # print('logits_h.shape:', logits_h.shape)
-        # print('mask_h.shape:', mask_h.shape)
-
         # maksed prediction loss
         logits_l_on_mask = logits_l[mask_l]  # (bm k) where m < n
         s_l_on_mask = s_l[mask_l]  # (bm) where m < n
-        # print('logits_l.shape:', logits_l.shape)
-        # print('mask_l.shape:', mask_l.shape)
-        # print('logits_l_on_mask.shape:', logits_l_on_mask.shape)
-        # print('s_l_on_mask.shape:', s_l_on_mask.shape)
         mask_pred_loss_l = F.cross_entropy(logits_l_on_mask.float(), s_l_on_mask.long())
         
         logits_h_on_mask = logits_h[mask_h]  # (bm k) where m < n
@@ -216,18 +203,6 @@ class MaskGIT(nn.Module):
 
         mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
         return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)        
-
-        # # maksed prediction loss
-        # logits_l_on_mask = logits_l[~mask_l]  # (bm k) where m < n
-        # s_l_on_mask = s_l[~mask_l]  # (bm) where m < n
-        # mask_pred_loss_l = F.cross_entropy(logits_l_on_mask.float(), s_l_on_mask.long())
-        
-        # logits_h_on_mask = logits_h[~mask_h]  # (bm k) where m < n
-        # s_h_on_mask = s_h[~mask_h]  # (bm) where m < n
-        # mask_pred_loss_h = F.cross_entropy(logits_h_on_mask.float(), s_h_on_mask.long())
-
-        # mask_pred_loss = mask_pred_loss_l + mask_pred_loss_h
-        # return mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h)
     
     def gamma_func(self, mode="cosine"):
         if mode == "linear":

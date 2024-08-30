@@ -52,8 +52,9 @@ def train_stage1(config: dict,
     # Check if GPU is available
     if not torch.cuda.is_available():
         print('GPU is not available.')
-        num_cpus = multiprocessing.cpu_count()
-        print(f'using CPUs ({num_cpus} CPUs have been detected to be available)')
+        # num_cpus = multiprocessing.cpu_count()
+        num_cpus = 1
+        print(f'using {num_cpus} CPUs..')
         gpu_device_indices = num_cpus
         accelerator = 'cpu'
     else:
