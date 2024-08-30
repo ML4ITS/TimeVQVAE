@@ -111,33 +111,36 @@ class MaskGIT(nn.Module):
         zq, s, _, _ = quantize(z, vq_model, svq_temp=svq_temp)  # (b c h w), (b (h w) h), ...
         return zq, s
     
-    def masked_prediction(self, transformer, ids_restore, class_condition, *s_in):
+    def masked_prediction(self, transformer, mask, ids_restore, class_condition, *s_in):
         """
         masked prediction with classifier-free guidance
         """
         if isinstance(class_condition, type(None)):
             # unconditional 
-            logits_null = transformer(*s_in, class_condition=None, ids_restore=ids_restore)  # (b n k)
+            logits_null = transformer(*s_in, class_condition=None, mask=mask, ids_restore=ids_restore)  # (b n k)
             return logits_null
         else:
             # class-conditional
             if self.cfg_scale == 1.0:
-                logits = transformer(*s_in, class_condition=class_condition, ids_restore=ids_restore)  # (b n k)
+                logits = transformer(*s_in, class_condition=class_condition, mask=mask, ids_restore=ids_restore)  # (b n k)
             else:
                 # with CFG
-                logits_null = transformer(*s_in, class_condition=None, ids_restore=ids_restore)
-                logits = transformer(*s_in, class_condition=class_condition, ids_restore=ids_restore)  # (b n k)
+                logits_null = transformer(*s_in, class_condition=None, mask=mask, ids_restore=ids_restore)
+                logits = transformer(*s_in, class_condition=class_condition, mask=mask, ids_restore=ids_restore)  # (b n k)
                 logits = logits_null + self.cfg_scale * (logits - logits_null)
             return logits
 
-    def random_masking(self, x, mask_ratio):
+    def random_masking(self, x, mask_ratio, freq:str):
         """
         Perform per-sample random masking by per-sample shuffling.
         Per-sample shuffling is done by argsort random noise.
         x: [N, L], sequence = (b n)
         """
         N, L = x.shape  # batch, length (N, L)
-        len_keep = max(round(L * (1 - mask_ratio)), 1)  # Number of patches to keep; keep at least 1 token
+        # len_keep = round(L * (1 - mask_ratio))  # Number of patches to keep
+        # len_keep = np.clip(round(L * (1 - mask_ratio)), 1, L-1)  # Number of patches to keep; keep at least 1 token and 1 masked token.
+        len_keep = np.clip(round(L * (1 - mask_ratio)), 0, L-1)  # Number of patches to keep; keep at least 1 token.
+
 
         noise = torch.rand(N, L, device=x.device)  # Generate random noise for masking (N, L)
 
@@ -154,8 +157,12 @@ class MaskGIT(nn.Module):
         mask[:, :len_keep] = 0  # Set first len_keep entries to 0
         # Unshuffle to get the binary mask
         mask = torch.gather(mask, dim=1, index=ids_restore)  # Unshuffle mask to match original input order (N, L)
+        mask = mask.bool()
 
-        return x_masked, mask.bool(), ids_restore.long()
+        x_masked_dim_kept = x.clone()  # (N, L)
+        x_masked_dim_kept[mask] = self.mask_token_ids[freq]  # while keeping the original dim, the maksed tokens are simply indexed by mask_token_id
+
+        return (x_masked, x_masked_dim_kept), mask, ids_restore.long()
 
     def forward(self, x, y):
         """
@@ -174,13 +181,25 @@ class MaskGIT(nn.Module):
         _, s_h = self.encode_to_z_q(x, self.encoder_h, self.vq_model_h)  # (b m)
 
         # mask tokens
-        masking_ratio = np.random.uniform(0., 1.)
-        s_l_M, mask_l, ids_restore_l = self.random_masking(s_l, masking_ratio)  # (b, len_keep, d), (b n), (b n)
-        s_h_M, mask_h, ids_restore_h = self.random_masking(s_h, masking_ratio)  # (b, len_keep, d), (b n), (b n)
+        r = np.random.uniform(0., 1.)
+        gamma = self.gamma_func()
+        masking_ratio = gamma(r)
+        (s_l_M, _), mask_l, ids_restore_l = self.random_masking(s_l, masking_ratio, 'lf')  # (b, len_keep), (b n), (b n)
+        (_, s_h_M_dim_kept), mask_h, ids_restore_h = self.random_masking(s_h, masking_ratio, 'hf')  # (b, n), (b n), (b n)
 
         # prediction
-        logits_l = self.masked_prediction(self.transformer_l, ids_restore_l, y, s_l_M)  # (b n k)
-        logits_h = self.masked_prediction(self.transformer_h, ids_restore_h, y, s_l_M, s_h_M)
+        logits_l = self.masked_prediction(self.transformer_l, mask_l, ids_restore_l, y, s_l_M)  # (b n k)
+        logits_h = self.masked_prediction(self.transformer_h, mask_h, ids_restore_h, y, s_l, s_h_M_dim_kept)
+
+        # print('s_l.shape:', s_l.shape)
+        # print('s_l_M.shape:', s_l_M.shape)
+        # print('logits_l.shape:', logits_l.shape)
+        # print('mask_l.shape:', mask_l.shape)
+
+        # print('s_h.shape:', s_h.shape)
+        # print('s_h_M.shape:', s_h_M.shape)
+        # print('logits_h.shape:', logits_h.shape)
+        # print('mask_h.shape:', mask_h.shape)
 
         # maksed prediction loss
         logits_l_on_mask = logits_l[mask_l]  # (bm k) where m < n

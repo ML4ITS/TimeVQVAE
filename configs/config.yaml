@@ -47,7 +47,7 @@ MaskGIT:
   prior_model_l:
     hidden_dim: 128
     n_enc_layers: 3
-    n_dec_layers: 1
+    n_dec_layers: 2
     heads: 2
     ff_mult: 1
     use_rmsnorm: True
@@ -57,7 +57,7 @@ MaskGIT:
   prior_model_h:
     hidden_dim: 32
     n_enc_layers: 1
-    n_dec_layers: 1
+    n_dec_layers: 2
     heads: 1
     ff_mult: 1
     use_rmsnorm: True
