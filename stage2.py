@@ -28,7 +28,7 @@ def load_args():
     parser.add_argument('--config', type=str, help="Path to the config data  file.",
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
-    parser.add_argument('--gpu_device_idx', default=0, type=int)
+    parser.add_argument('--gpu_device_ind', nargs='+', default=[0], type=int, help='Indices of GPU devices to use.')
     parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     return parser.parse_args()
@@ -38,7 +38,7 @@ def train_stage2(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
-                 gpu_device_idx,
+                 gpu_device_ind,
                  feature_extractor_type:str,
                  use_custom_dataset:bool,
                  ):
@@ -53,12 +53,24 @@ def train_stage2(config: dict,
     wandb_logger = WandbLogger(project=project_name, name=None, 
                                config={**config, 'dataset_name': dataset_name, 'n_trainable_params': n_trainable_params, 'feature_extractor_type':feature_extractor_type})
     
+    # Check if GPU is available
+    if not torch.cuda.is_available():
+        print('GPU is not available.')
+        # num_cpus = multiprocessing.cpu_count()
+        num_cpus = 1
+        print(f'using {num_cpus} CPUs..')
+        device = num_cpus
+        accelerator = 'cpu'
+    else:
+        accelerator = 'gpu'
+        device = gpu_device_ind
+
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='step')],
                          max_steps=config['trainer_params']['max_steps']['stage2'],
-                         devices=[gpu_device_idx,],
-                         accelerator='gpu',
+                         devices=device,
+                         accelerator=accelerator,
                          val_check_interval=config['trainer_params']['val_check_interval']['stage2'],
                          check_val_every_n_epoch=None,
                          )
@@ -74,10 +86,11 @@ def train_stage2(config: dict,
 
     # test
     print('evaluating...')
-    evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, gpu_device_idx, config, 
+    eval_device = device[0] if accelerator == 'gpu' else 'cpu'
+    evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, eval_device, config, 
                             use_fidelity_enhancer=False,
                             feature_extractor_type=feature_extractor_type,
-                            use_custom_dataset=use_custom_dataset).to(gpu_device_idx)
+                            use_custom_dataset=use_custom_dataset).to(eval_device)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
     (_, _, x_gen), _ = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
     # z_train = evaluation.z_train
@@ -122,4 +135,4 @@ if __name__ == '__main__':
             train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_idx, args.feature_extractor_type, args.use_custom_dataset)
+        train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_ind, args.feature_extractor_type, args.use_custom_dataset)

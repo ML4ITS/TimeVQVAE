@@ -42,7 +42,7 @@ class Evaluation(nn.Module):
                  in_channels:int,
                  input_length:int, 
                  n_classes:int, 
-                 gpu_device_index:int, 
+                 device:int, 
                  config:dict, 
                  use_fidelity_enhancer:bool=False,
                  feature_extractor_type:str='rocket',
@@ -51,14 +51,14 @@ class Evaluation(nn.Module):
                  ):
         super().__init__()
         self.dataset_name = dataset_name
-        self.device = torch.device(gpu_device_index)
+        self.device = torch.device(device)
         self.config = config
         self.batch_size = self.config['evaluation']['batch_size']
         self.feature_extractor_type = feature_extractor_type
         assert feature_extractor_type in ['supervised_fcn', 'rocket'], 'unavailable feature extractor type.'
 
         if not use_custom_dataset:
-            self.fcn = load_pretrained_FCN(dataset_name).to(gpu_device_index)
+            self.fcn = load_pretrained_FCN(dataset_name).to(device)
             self.fcn.eval()
         if feature_extractor_type == 'rocket':
             self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)

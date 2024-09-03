@@ -52,11 +52,11 @@ We did so becaused the original datasets have two primary issues to be used to t
 
 ### Training: Stage1 and Stage2
 ```commandline
-python stage1.py --dataset_names Wafer --gpu_device_idx 0
+python stage1.py --dataset_names Wafer --gpu_device_ind 0
 ```
 
 ```commandline
-python stage2.py --dataset_names Wafer --gpu_device_idx 0
+python stage2.py --dataset_names Wafer --gpu_device_ind 0
 ```
 The trained model is saved in `saved_models/`.
 The details of the logged metrics are documented in `evaluation/README.md`.
@@ -90,10 +90,10 @@ Refer to `simple_sampling.ipynb`.
 3. run the following codes - stage1,2.
 
 ```commandline
-python stage1.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
+python stage1.py --use_custom_dataset True --dataset_names custom --gpu_device_ind 0
 ```
 ```commandline
-python stage2.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
+python stage2.py --use_custom_dataset True --dataset_names custom --gpu_device_ind 0
 ```
 ```commandline
 python evaluate.py --use_custom_dataset True --dataset_names custom --gpu_device_idx 0
@@ -147,7 +147,7 @@ It is a U-Net-based mapping model that transforms a synthetic time series genera
 The model training is availble after finishing the stage1 and stage2 trainings. 
 To train FE-VQTSG, run 
 ```commandline
-python stage_fid_enhancer.py  --dataset_names Wafer --gpu_device_idx 0
+python stage_fid_enhancer.py  --dataset_names Wafer --gpu_device_ind 0
 ```
 
 During the evaluation, FE-VQTSG can be employed by setting `--use_fidelity_enhancer True`.
