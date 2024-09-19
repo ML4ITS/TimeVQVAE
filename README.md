@@ -15,13 +15,18 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 <img src=".fig/iterative_decoding_process.jpg" alt="" width=100% height=100%>
 </p>
 
-<p align="center">
+<!-- <p align="center">
 <img src=".fig/example_of_iterative_decoding.jpg" alt="" width=60% height=60%>
 </p>
 
 <p align="center">
 <img src=".fig/visual_examples_generated_samples.jpg" alt="" width=100% height=100%>
-</p>
+</p> -->
+
+## Notes
+
+The implementation has been modified for better performance and smaller memory consumption. Therefore, the resulting evaluation metrics are probably somewhat different from the repoted scores in the paper. We've done so to benefit the community for their practical use.
+
 
 ## Install / Environment setup
 You should first create a virtual environment, and activate the environment.
