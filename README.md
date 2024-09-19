@@ -25,7 +25,7 @@ TimeVQVAE is a robust time series generation model that utilizes vector quantiza
 
 ## Notes
 
-The implementation has been modified for better performance and smaller memory consumption. Therefore, the resulting evaluation metrics are probably somewhat different from the repoted scores in the paper. We've done so to benefit the community for their practical use.
+The implementation has been modified for better performance and smaller memory consumption. Therefore, the resulting evaluation metrics are probably somewhat different from the repoted scores in the paper. We've done so to benefit the community for their practical use. For details, see the Update Notes section below.
 
 
 ## Install / Environment setup
