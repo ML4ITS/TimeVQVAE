@@ -358,6 +358,7 @@ class MaskGIT(nn.Module):
         :param return_representations:
         :return:
         """
+        self.eval()
         frequency = frequency.lower()
         assert frequency in ['lf', 'hf']
 
