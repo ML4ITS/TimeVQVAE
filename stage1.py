@@ -68,6 +68,8 @@ def train_stage1(config: dict,
                          accelerator=accelerator,
                          val_check_interval=config['trainer_params']['val_check_interval']['stage1'],
                          check_val_every_n_epoch=None,
+                         # precision='bf16',
+                         accumulate_grad_batches=1,
                          )
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
