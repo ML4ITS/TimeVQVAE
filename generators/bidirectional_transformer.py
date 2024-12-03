@@ -5,6 +5,8 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import weight_norm
 import torch.nn.functional as F
+from torch import Tensor
+
 from einops import repeat, rearrange
 # from x_transformers import ContinuousTransformerWrapper, Encoder as TFEncoder
 
@@ -232,6 +234,123 @@ def exists(val):
 def l2norm(t):
     return F.normalize(t, dim = -1)
 
+
+class DiffAttn(nn.Module):
+    """
+    Differential Attention module.
+    
+    This module computes attention weights based on the difference between two sets of queries and keys.
+    
+    Attributes:
+    - d (int): The dimensionality of the attention weights.
+    - embedding_dim (int): The dimensionality of the input embeddings.
+    - W_q (nn.Linear): Linear layer for transforming queries.
+    - W_k (nn.Linear): Linear layer for transforming keys.
+    - W_v (nn.Linear): Linear layer for transforming values.
+    """
+    def __init__(self, d: int, embedding_dim: int):
+        super(DiffAttn, self).__init__()
+        self.d = d
+        self.W_q = nn.Linear(embedding_dim, 2 * d)
+        self.W_k = nn.Linear(embedding_dim, 2 * d)
+        self.W_v = nn.Linear(embedding_dim, d)  # Changed to output d dimensions
+
+    def forward(self, X: Tensor, λ: float) -> Tensor:
+        """
+        Forward pass of the Differential Attention module.
+        
+        Args:
+        - X (Tensor): Input tensor.
+        - λ (float): Scaling factor for the difference.
+        
+        Returns:
+        - Tensor: Output tensor.
+        """
+        Q = self.W_q(X)
+        K = self.W_k(X)
+        V = self.W_v(X)
+
+        Q1, Q2 = self.split(Q)
+        K1, K2 = self.split(K)
+
+        s = 1 / math.sqrt(self.d)
+        
+        A1 = (Q1 @ K1.transpose(-1, -2)) * s
+        A2 = (Q2 @ K2.transpose(-1, -2)) * s
+        
+        A1_softmax = F.softmax(A1, dim=-1)
+        A2_softmax = F.softmax(A2, dim=-1)
+        
+        result = (A1_softmax - λ * A2_softmax) @ V
+        return result
+
+    @staticmethod
+    def split(X: Tensor) -> (Tensor, Tensor):
+        """
+        Splits the input tensor into two halves along the last dimension.
+        
+        Args:
+        - X (Tensor): Input tensor.
+        
+        Returns:
+        - Tuple[Tensor, Tensor]: Two tensors, each containing half of the input dimensions.
+        """
+        half_dim = X.shape[-1] // 2
+        return X[..., :half_dim], X[..., half_dim:]
+
+
+class MultiHeadDifferentialAttention(nn.Module):
+    """
+    Multi-Head Differential Attention module.
+    
+    This module applies the Differential Attention mechanism multiple times in parallel.
+    
+    Attributes:
+    - h (int): The number of attention heads.
+    - d (int): The dimensionality of the attention weights.
+    - embedding_dim (int): The dimensionality of the input embeddings.
+    - λinit (float): The initial scaling factor for the difference.
+    - diff_attn_heads (nn.ModuleList): List of Differential Attention modules.
+    - W_o (nn.Linear): Linear layer for output transformation.
+    - norm (nn.LayerNorm): Layer normalization module.
+    """
+    def __init__(self, h: int, d: int, embedding_dim: int, λinit: float=0.05):
+        super(MultiHeadDifferentialAttention, self).__init__()
+        self.h = h
+        self.d = d
+        self.λinit = λinit
+        self.embedding_dim = embedding_dim
+        self.diff_attn_heads = nn.ModuleList([DiffAttn(d, embedding_dim) for _ in range(h)])
+        self.W_o = nn.Linear(h * d, embedding_dim)  # Changed to h * d
+        self.norm = nn.LayerNorm(embedding_dim)
+
+    def forward(self, X: Tensor, λ: float=0.1) -> Tensor:
+        """
+        Forward pass of the Multi-Head Differential Attention module.
+        
+        Args:
+        - X (Tensor): Input tensor.
+        - λ (float): Scaling factor for the difference.
+        
+        Returns:
+        - Tensor: Output tensor.
+        """
+        O_list = [head(X, λ) for head in self.diff_attn_heads]
+        
+        O_concat = torch.cat(O_list, dim=-1)
+
+        # Apply the output transformation
+        result = self.W_o(O_concat)
+
+        # Apply LayerNorm
+        result = self.norm(result)
+
+        # Scale by λinit
+        result = result * (1 - self.λinit)
+
+        return result
+    
+    
 class Attention(nn.Module):
     def __init__(
         self,
@@ -298,6 +417,137 @@ class Attention(nn.Module):
         out = self.norm_out(out)
         return out
 
+def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
+    """torch.repeat_interleave(x, dim=1, repeats=n_rep)"""
+    bs, n_kv_heads, slen, head_dim = x.shape
+    if n_rep == 1:
+        return x
+    return (
+        x[:, :, None, :, :]
+        .expand(bs, n_kv_heads, n_rep, slen, head_dim)
+        .reshape(bs, n_kv_heads * n_rep, slen, head_dim)
+    )
+
+def lambda_init_fn(depth):
+    return 0.8 - 0.6 * math.exp(-0.3 * depth)
+
+class RMSNorm(nn.Module):
+    def __init__(self, dim: int, eps: float = 1e-6, elementwise_affine=True, memory_efficient=False):
+        super().__init__()
+        self.dim = dim
+        self.eps = eps
+        self.elementwise_affine = elementwise_affine
+        if self.elementwise_affine:
+            self.weight = nn.Parameter(torch.ones(dim))
+        else:
+            self.register_parameter('weight', None)
+
+    def _norm(self, x):
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
+
+    def forward(self, x):
+        output = self._norm(x.float()).type_as(x)
+        if self.weight is not None:
+            output = output * self.weight
+        return output
+
+    def extra_repr(self) -> str:
+        return f'dim={self.dim}, eps={self.eps}, elementwise_affine={self.elementwise_affine}'
+    
+class MultiheadDiffAttn(nn.Module):
+    def __init__(
+        self,
+        # args,
+        embed_dim:int,
+        depth:int,
+        num_heads:int,
+        head_dim:int,
+    ):
+        super().__init__()
+        # self.args = args
+        self.embed_dim = embed_dim
+        
+        # arg num_heads set to half of Transformer's num_heads
+        self.num_heads = num_heads
+        
+        # arg decoder_kv_attention_heads set to half of Transformer's num_kv_heads if use GQA
+        # set to same as num_heads if use normal MHA
+        self.num_kv_heads = num_heads  #args.decoder_kv_attention_heads if args.decoder_kv_attention_heads is not None else num_heads
+        self.n_rep = self.num_heads // self.num_kv_heads
+        
+        self.head_dim = head_dim #embed_dim // num_heads // 2
+        self.scaling = self.head_dim ** -0.5
+        
+        self.q_proj = weight_norm(nn.Linear(embed_dim, self.head_dim*num_heads*2, bias=False))
+        self.k_proj = weight_norm(nn.Linear(embed_dim, self.head_dim*num_heads*2 // self.n_rep, bias=False))
+        self.v_proj = weight_norm(nn.Linear(embed_dim, self.head_dim*num_heads*2 // self.n_rep, bias=False))
+        self.out_proj = weight_norm(nn.Linear(self.head_dim*num_heads*2, embed_dim, bias=False))
+
+        self.lambda_init = lambda_init_fn(depth)
+        self.lambda_q1 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k1 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_q2 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+        self.lambda_k2 = nn.Parameter(torch.zeros(self.head_dim, dtype=torch.float32).normal_(mean=0,std=0.1))
+
+        self.subln = RMSNorm(2 * self.head_dim, eps=1e-5, elementwise_affine=True)
+    
+    def forward(
+        self,
+        x,
+        # rel_pos,
+        attn_mask=None,
+    ):
+        """
+        x (Tensor)
+        """
+        bsz, tgt_len, embed_dim = x.size()
+        src_len = tgt_len
+
+        q = self.q_proj(x)
+        k = self.k_proj(x)
+        v = self.v_proj(x)
+
+        q = q.view(bsz, tgt_len, 2 * self.num_heads, self.head_dim)
+        k = k.view(bsz, src_len, 2 * self.num_kv_heads, self.head_dim)
+        v = v.view(bsz, src_len, self.num_kv_heads, 2 * self.head_dim)
+
+        # q = apply_rotary_emb(q, *rel_pos, interleaved=True)
+        # k = apply_rotary_emb(k, *rel_pos, interleaved=True)
+
+        offset = src_len - tgt_len
+        q = q.transpose(1, 2)
+        k = repeat_kv(k.transpose(1, 2), self.n_rep)
+        v = repeat_kv(v.transpose(1, 2), self.n_rep)
+        q *= self.scaling
+        attn_weights = torch.matmul(q, k.transpose(-1, -2))
+        if attn_mask is None:
+            attn_mask = torch.triu(
+                torch.zeros([tgt_len, src_len])
+                .float()
+                .fill_(float("-inf"))
+                .type_as(attn_weights),
+                1 + offset,
+            )
+        attn_weights = torch.nan_to_num(attn_weights)
+        attn_weights += attn_mask   
+        attn_weights = F.softmax(attn_weights, dim=-1, dtype=torch.float32).type_as(
+            attn_weights
+        )
+
+        lambda_1 = torch.exp(torch.sum(self.lambda_q1 * self.lambda_k1, dim=-1).float()).type_as(q)
+        lambda_2 = torch.exp(torch.sum(self.lambda_q2 * self.lambda_k2, dim=-1).float()).type_as(q)
+        lambda_full = lambda_1 - lambda_2 + self.lambda_init
+        attn_weights = attn_weights.view(bsz, self.num_heads, 2, tgt_len, src_len)
+        attn_weights = attn_weights[:, :, 0] - lambda_full * attn_weights[:, :, 1]
+        
+        attn = torch.matmul(attn_weights, v)
+        attn = self.subln(attn)
+        attn = attn * (1 - self.lambda_init)
+        attn = attn.transpose(1, 2).reshape(bsz, tgt_len, self.num_heads * 2 * self.head_dim)
+
+        attn = self.out_proj(attn)
+        return attn
+    
 class TransformerBlocks(nn.Module):
     def __init__(
         self,
@@ -311,17 +561,21 @@ class TransformerBlocks(nn.Module):
         super().__init__()
         self.layers = nn.ModuleList([])
 
-        for _ in range(depth):
+        for dep_i in range(depth):
             self.layers.append(nn.ModuleList([
                 Attention(dim = dim, dim_head = dim_head, heads = heads),
+                # MultiHeadDifferentialAttention(h=heads, d=dim_head, embedding_dim=dim),
+                # MultiheadDiffAttn(dim, dep_i+1, heads, dim_head),
                 FeedForward(dim = dim, mult = ff_mult),
             ]))
 
     def forward(self, x, mask=None):
         for attn, ff in self.layers:
-            x = x + attn(x, mask=mask)
+            x = x + attn(x)
             x = x + ff(x)
         return x
+    
+
 
 class BidirectionalTransformer(nn.Module):
     def __init__(self,
@@ -374,23 +628,6 @@ class BidirectionalTransformer(nn.Module):
         # transformer
         self.pos_emb = nn.Embedding(self.num_tokens + 1, in_dim)
         self.class_condition_emb = nn.Embedding(n_classes + 1, in_dim)  # `+1` is for no-condition
-        # self.blocks = ContinuousTransformerWrapper(dim_in=in_dim,
-        #                                            dim_out=in_dim,
-        #                                            max_seq_len=self.num_tokens + 1,
-        #                                            use_abs_pos_emb=False,
-        #                                            post_emb_norm=True,
-        #                                            attn_layers=TFEncoder(
-        #                                                pre_norm=True,
-        #                                                dim=hidden_dim,
-        #                                                depth=n_layers,
-        #                                                heads=heads,
-        #                                                attn_dim_head=64,
-        #                                                use_rmsnorm=use_rmsnorm,
-        #                                                ff_mult=ff_mult,
-        #                                                layer_dropout=model_dropout,
-        #                                                attn_dropout=model_dropout, 
-        #                                                ff_dropout=model_dropout,
-        #                                            ))
         self.blocks = TransformerBlocks(dim=in_dim, depth=n_layers, dim_head=64, heads=heads, ff_mult=ff_mult)
         self.pred_head = nn.Sequential(*[
             weight_norm(nn.Linear(in_features=in_dim, out_features=out_dim)),
