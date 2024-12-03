@@ -135,6 +135,7 @@ class ExpStage1(pl.LightningModule):
                      }
         
         # log
+        self.log('global_step', self.global_step)
         for k in loss_hist.keys():
             self.log(f'train/{k}', loss_hist[k])
 
@@ -160,6 +161,7 @@ class ExpStage1(pl.LightningModule):
                      }
         
         # log
+        self.log('global_step', self.global_step)
         for k in loss_hist.keys():
             self.log(f'val/{k}', loss_hist[k])
 
