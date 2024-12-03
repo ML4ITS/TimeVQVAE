@@ -62,7 +62,7 @@ class ExpStage2(pl.LightningModule):
                      'mask_pred_loss_l': mask_pred_loss_l,
                      'mask_pred_loss_h': mask_pred_loss_h,
                      }
-        self.log('global_step', self.global_step)
+        
         for k in loss_hist.keys():
             self.log(f'val/{k}', loss_hist[k])
         

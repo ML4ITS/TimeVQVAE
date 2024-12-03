@@ -134,6 +134,7 @@ class VQVAEEncoder(nn.Module):
         x = self.pad_func(x, copy=True)   # (b c h w)
 
         out = self.encoder(x)  # (b c h w)
+        out = F.normalize(out, dim=1)  # following hilcodec
         if not self.is_num_tokens_updated:
             self.H_prime = torch.tensor(out.shape[2])
             self.W_prime = torch.tensor(out.shape[3])

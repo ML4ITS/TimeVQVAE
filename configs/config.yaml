@@ -12,12 +12,12 @@ exp_params:
 
 trainer_params:
   max_steps:
-    stage1: 50000
+    stage1: 20000 #50000
     stage2: 200000
     stage_fid_enhancer: 50000
   val_check_interval:
     stage1: 1000
-    stage2: 10000
+    stage2: 1000
     stage_fid_enhancer: 2500
 
 encoder:
@@ -34,8 +34,11 @@ decoder:
 VQ-VAE:
   n_fft: 4
   codebook_sizes:
-    lf: 32
-    hf: 32
+    lf: 1024
+    hf: 1024
+  kmeans_init: True
+  codebook_dim: 8
+
 
 MaskGIT:
   choice_temperatures: # higher temp -> higher sample diversity
@@ -43,7 +46,7 @@ MaskGIT:
     hf: 4
   T:  # num sampling (iterative decoding) steps
     lf: 10
-    hf: 1
+    hf: 4
   prior_model_l:
     hidden_dim: 128
     n_layers: 4
