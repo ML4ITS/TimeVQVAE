@@ -3,6 +3,7 @@ reference: https://github.com/nadavbh12/VQ-VAE/blob/master/vq_vae/auto_encoder.p
 """
 import torch
 import torch.nn as nn
+from torch.nn.utils import weight_norm
 import torch.nn.functional as F
 import numpy as np
 from utils import timefreq_to_time, time_to_timefreq, SnakeActivation
@@ -20,12 +21,10 @@ class ResBlock(nn.Module):
 
         layers = [
             SnakeActivation(in_channels, 2), #SnakyGELU(in_channels, 2), #SnakeActivation(in_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
-            nn.Conv2d(in_channels, mid_channels,
-                      kernel_size=kernel_size, stride=(1, 1), padding=padding),
+            weight_norm(nn.Conv2d(in_channels, mid_channels, kernel_size=kernel_size, stride=(1, 1), padding=padding)),
             nn.BatchNorm2d(out_channels),
             SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
-            nn.Conv2d(mid_channels, out_channels,
-                      kernel_size=kernel_size, stride=(1, 1), padding=padding),
+            weight_norm(nn.Conv2d(mid_channels, out_channels, kernel_size=kernel_size, stride=(1, 1), padding=padding)),
             nn.Dropout(dropout)
         ]
         self.convs = nn.Sequential(*layers)
@@ -48,8 +47,7 @@ class VQVAEEncBlock(nn.Module):
         padding = (0, 1) if frequency_indepence else (1, 1)
 
         self.block = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding,
-                      padding_mode='replicate'),
+            weight_norm(nn.Conv2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding, padding_mode='replicate')),
             nn.BatchNorm2d(out_channels),
             SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Dropout(dropout))
@@ -72,7 +70,7 @@ class VQVAEDecBlock(nn.Module):
         padding = (0, 1) if frequency_indepence else (1, 1)
 
         self.block = nn.Sequential(
-            nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding),
+            weight_norm(nn.ConvTranspose2d(in_channels, out_channels, kernel_size=kernel_size, stride=(1, 2), padding=padding)),
             nn.BatchNorm2d(out_channels),
             SnakeActivation(out_channels, 2), #SnakyGELU(out_channels, 2), #SnakeActivation(out_channels, 2), #nn.LeakyReLU(), #SnakeActivation(),
             nn.Dropout(dropout))
