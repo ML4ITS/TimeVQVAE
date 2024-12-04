@@ -38,12 +38,12 @@ class ExpStage2(pl.LightningModule):
         sch.step()
 
         # log
+        self.log('global_step', self.global_step)
         loss_hist = {'loss': mask_pred_loss,
                      'mask_pred_loss': mask_pred_loss,
                      'mask_pred_loss_l': mask_pred_loss_l,
                      'mask_pred_loss_h': mask_pred_loss_h,
                      }
-        self.log('global_step', self.global_step)
         for k in loss_hist.keys():
             self.log(f'train/{k}', loss_hist[k])
 
@@ -57,12 +57,12 @@ class ExpStage2(pl.LightningModule):
         mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
 
         # log
+        self.log('global_step', self.global_step)
         loss_hist = {'loss': mask_pred_loss,
                      'mask_pred_loss': mask_pred_loss,
                      'mask_pred_loss_l': mask_pred_loss_l,
                      'mask_pred_loss_h': mask_pred_loss_h,
                      }
-        
         for k in loss_hist.keys():
             self.log(f'val/{k}', loss_hist[k])
         
