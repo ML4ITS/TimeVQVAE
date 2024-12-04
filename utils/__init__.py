@@ -227,7 +227,7 @@ def time_to_timefreq(x, n_fft: int, C: int, norm:bool=True):
     x = torch.stft(x, n_fft, normalized=norm, return_complex=True, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = torch.view_as_real(x)  # (B, N, T, 2); 2: (real, imag)
     x = rearrange(x, '(b c) n t z -> b (c z) n t ', c=C)  # z=2 (real, imag)
-    return x  # (B, C, H, W)
+    return x.float()  # (B, C, H, W)
 
 
 def timefreq_to_time(x, n_fft: int, C: int, norm:bool=True):
@@ -236,7 +236,7 @@ def timefreq_to_time(x, n_fft: int, C: int, norm:bool=True):
     x = torch.view_as_complex(x)
     x = torch.istft(x, n_fft, normalized=norm, window=torch.hann_window(window_length=n_fft, device=x.device))
     x = rearrange(x, '(b c) l -> b c l', c=C)
-    return x
+    return x.float()
 
 
 def compute_var_loss(z):

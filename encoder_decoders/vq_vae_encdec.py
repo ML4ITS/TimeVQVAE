@@ -95,7 +95,7 @@ class VQVAEEncoder(nn.Module):
                  num_channels: int,
                  downsample_rate: int,
                  n_resnet_blocks: int,
-                 pad_func,
+                 kind:str,
                  n_fft:int,
                  frequency_indepence:bool,
                  dropout:float=0.3,
@@ -109,9 +109,8 @@ class VQVAEEncoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
-        self.pad_func = pad_func
+        self.kind = kind
         self.n_fft = n_fft
-
 
         d = init_dim
         enc_layers = [VQVAEEncBlock(num_channels, d, frequency_indepence),]
@@ -135,7 +134,11 @@ class VQVAEEncoder(nn.Module):
         """
         in_channels = x.shape[1]
         x = time_to_timefreq(x, self.n_fft, in_channels)  # (b c h w)
-        x = self.pad_func(x, copy=True)   # (b c h w)
+
+        if self.kind == 'lf':
+            x = x[:,:,[0],:]  # (b c 1 w)
+        elif self.kind == 'hf':
+            x = x[:,:,1:,:]  # (b c h-1 w)
 
         out = self.encoder(x)  # (b c h w)
         out = F.normalize(out, dim=1)  # following hilcodec
@@ -159,7 +162,7 @@ class VQVAEDecoder(nn.Module):
                  downsample_rate: int,
                  n_resnet_blocks: int,
                  input_length:int,
-                 pad_func,
+                 kind:str,
                  n_fft:int,
                  x_channels:int,
                  frequency_indepence:bool,
@@ -173,7 +176,7 @@ class VQVAEDecoder(nn.Module):
         :param kwargs:
         """
         super().__init__()
-        self.pad_func = pad_func
+        self.kind = kind
         self.n_fft = n_fft
         self.x_channels = x_channels
         
@@ -203,7 +206,15 @@ class VQVAEDecoder(nn.Module):
 
     def forward(self, x):
         out = self.decoder(x)  # (b c h w)
-        out = self.pad_func(out)  # (b c h w)
+
+        if self.kind == 'lf':
+            zeros = torch.zeros((out.shape[0],out.shape[1],self.n_fft//2+1,out.shape[-1])).float().to(out.device)
+            zeros[:,:,[0],:] = out
+            out = zeros
+        elif self.kind == 'hf':
+            zeros = torch.zeros((out.shape[0],out.shape[1],self.n_fft//2+1,out.shape[-1])).float().to(out.device)
+            zeros[:,:,1:,:] = out
+            out = zeros
         out = timefreq_to_time(out, self.n_fft, self.x_channels)  # (b c l)
 
         out = self.interp(out)  # (b c l)

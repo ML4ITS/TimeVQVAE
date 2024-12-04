@@ -33,16 +33,16 @@ class ExpStage1(pl.LightningModule):
         downsample_rate_h = compute_downsample_rate(input_length, self.n_fft, downsampled_width_h)
 
         # encoder
-        self.encoder_l = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], zero_pad_high_freq, self.n_fft, frequency_indepence=False)
-        self.encoder_h = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], zero_pad_low_freq, self.n_fft, frequency_indepence=False)
+        self.encoder_l = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['encoder']['n_resnet_blocks'], 'lf', self.n_fft, frequency_indepence=True)
+        self.encoder_h = VQVAEEncoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['encoder']['n_resnet_blocks'], 'hf', self.n_fft, frequency_indepence=False)
 
         # quantizer
         self.vq_model_l = VectorQuantize(hid_dim, config['VQ-VAE']['codebook_sizes']['lf'], **config['VQ-VAE'])
         self.vq_model_h = VectorQuantize(hid_dim, config['VQ-VAE']['codebook_sizes']['hf'], **config['VQ-VAE'])
 
         # decoder
-        self.decoder_l = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, zero_pad_high_freq, self.n_fft, in_channels, frequency_indepence=False)
-        self.decoder_h = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, zero_pad_low_freq, self.n_fft, in_channels, frequency_indepence=False)
+        self.decoder_l = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_l, config['decoder']['n_resnet_blocks'], input_length, 'lf', self.n_fft, in_channels, frequency_indepence=True)
+        self.decoder_h = VQVAEDecoder(init_dim, hid_dim, 2*in_channels, downsample_rate_h, config['decoder']['n_resnet_blocks'], input_length, 'hf', self.n_fft, in_channels, frequency_indepence=False)
 
     def forward(self, batch, batch_idx, return_x_rec:bool=False):
         """
