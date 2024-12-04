@@ -375,7 +375,7 @@ class Evaluation(nn.Module):
 
         plt.legend(loc='upper right')
         plt.tight_layout()
-        wandb.log({f"PCA on Z ({labels})": wandb.Image(plt)})
+        wandb.log({f"PCA on Z ({'-'.join(labels)})": wandb.Image(plt)})
         plt.close()
 
     def log_tsne(self, n_plot_samples: int, X_gen, z_test: np.ndarray, z_gen: np.ndarray):
