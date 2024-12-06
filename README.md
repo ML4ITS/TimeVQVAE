@@ -123,14 +123,38 @@ The usage is simple:
 ## Update Notes
 
 ### Implementation Modifications
-* [2024.12.06] weight normaization is added in the VQVAE model; improved transformer implementation (the previous one was buggy, resulting in sub-optimal performance); using separable convoultional layers in VQVAE; discarding the unsued frequency bands in the stage1 model instead of zero-padding (to actually reduce the spaital dimension size in the bottleneck); 
-* [2024.07.26] updated $E$ and $D$ so that they have incremental hidden dimension sizes for depths; cosine annealing w/ linear warmup lr scheduler is used; reconstruction loss on a time domain only while modeling a discrete latent space from a time-frequency domain as before.
-* [2024.07.23] Snake activation [6] function is used instead of (Leaky)ReLU in the encoder and decoder. It's shown to generally improve the VQVAE's reconstruction capability in my experiments, especially beneficial for periodic time series like the ones in the FordA dataset.
-* [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
-* [2024.07.04] FID score can be computed with ROCKET representations in `evaluate.py` by setting `--feature_extractor_type rocket`. We found that the representations from ROCKET [5] result in more robust distributional plot with PCA and FID score. That is because the ROCKET representations are the most unbiased representations, as it is not trained at all, unlike any supervised methods like supervised FCN. This is a default setting now. Also, this enables FID score computation on a custom dataset, which supervisd FCN cannot do.
-* [2024.07.02] use a convolutional-based upsampling layer, (nearest neighbor interpolation - convs), to lengthen the LF token embeddings to match with the length of HF embeddings. Linear used to be used; Strong dropouts are used to the LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` to make the sampling process robust; Smaller HF transformer is used due to an overfitting problem; n_fft of 4 is used instead of 8.
-* [2024.07.01] compute the prior loss only on the masked locations, instead of the entire tokens.
 
+**[2024.12.06]**  
+- Add weight normalization to the VQVAE model for better training stability.  
+- Improve the Transformer implementation to fix previous bugs and enhance performance.  
+- Use separable convolutional layers in the VQVAE.  
+- Discard unused frequency bands in the stage 1 model (instead of zero-padding) to actually reduce the spatial dimensionality at the bottleneck.
+
+**[2024.07.26]**  
+- Modify encoder (E) and decoder (D) architectures so that their hidden dimension sizes increase incrementally with depth.  
+- Employ a cosine annealing learning rate scheduler with linear warmup.  
+- Apply reconstruction loss on the time domain only, while still modeling a discrete latent space derived from the time-frequency domain.
+
+**[2024.07.23]**  
+- Use the Snake activation function [6] in the encoder and decoder, replacing (Leaky)ReLU.  
+- Improved reconstruction capability of VQVAE, especially beneficial for periodic time series like the FordA dataset.
+
+**[2024.07.08]**  
+- Switch to reorganized datasets described above instead of the original datasets.
+
+**[2024.07.04]**  
+- Enable FID score computation using ROCKET [5] representations (default setting) by setting `--feature_extractor_type rocket` in `evaluate.py`.  
+- ROCKET provides unbiased, non-trained features, resulting in more robust PCA distributions and FID calculations.  
+- Supports evaluation on custom datasets where supervised FCN cannot be used.
+
+**[2024.07.02]**  
+- Use convolution-based upsampling (nearest neighbor interpolation + conv) to replace the previous linear layer method for lengthening LF token embeddings.  
+- Apply strong dropouts to LF and HF embeddings within `forward_hf` in `bidirectional_transformer.py` for robust sampling.  
+- Use a smaller HF transformer to address overfitting issues.  
+- Reduce `n_fft` from 8 to 4.
+
+**[2024.07.01]**  
+- Compute the prior loss only on masked token locations rather than the entire token set.
 
 <!-- ### Enhanced Sampling Scheme (ESS) [2]
  We have published a [follow-up paper](https://arxiv.org/abs/2309.07945) [2] that enhances the sampling process by resolving its  existing limitations, which in turn results in considerably higher fidelity.
