@@ -123,6 +123,7 @@ The usage is simple:
 ## Update Notes
 
 ### Implementation Modifications
+* [2024.12.06] weight normaization is added in the VQVAE model; improved transformer implementation (the previous one was buggy, resulting in sub-optimal performance); using separable convoultional layers in VQVAE; discarding the unsued frequency bands in the stage1 model instead of zero-padding (to actually reduce the spaital dimension size in the bottleneck); 
 * [2024.07.26] updated $E$ and $D$ so that they have incremental hidden dimension sizes for depths; cosine annealing w/ linear warmup lr scheduler is used; reconstruction loss on a time domain only while modeling a discrete latent space from a time-frequency domain as before.
 * [2024.07.23] Snake activation [6] function is used instead of (Leaky)ReLU in the encoder and decoder. It's shown to generally improve the VQVAE's reconstruction capability in my experiments, especially beneficial for periodic time series like the ones in the FordA dataset.
 * [2024.07.08] using the re-organized datasets instead of the original datasets, as decrived above in the Data Download section.
