@@ -35,6 +35,9 @@ Then you can install the necessary libraries by running the following command.
 pip install -r requirements.txt
 ```
 
+As for PyTorch, it was deveoped in `torch==2.5.1` with `pytorch-lightning==2.4.0`. You should install these yourself (not included in requirements.txt).
+
+
 
 ## Dataset and Dataset Download
 The UCR archive datasets are automatically downloaded if you run any of the training command below such as `python stage1.py`. If you just want to download the datasets only without running the training, run
