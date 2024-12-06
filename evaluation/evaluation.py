@@ -112,7 +112,7 @@ class Evaluation(nn.Module):
         self.ymin_pca, self.ymax_pca = np.min(z_transform_pca[:,1]), np.max(z_transform_pca[:,1])
 
     @torch.no_grad()
-    def sample(self, n_samples: int, kind: str, class_index:Union[int,None]=None, unscale:bool=False):
+    def sample(self, n_samples: int, kind: str, class_index:Union[int,None]=None, unscale:bool=False, batch_size=None):
         """
         
         unscale: unscale the generated sample with percomputed mean and std.
@@ -121,9 +121,9 @@ class Evaluation(nn.Module):
 
         # sampling
         if kind == 'unconditional':
-            x_new_l, x_new_h, x_new = unconditional_sample(self.maskgit, n_samples, self.device, batch_size=self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+            x_new_l, x_new_h, x_new = unconditional_sample(self.maskgit, n_samples, self.device, batch_size=batch_size if not isinstance(batch_size, type(None)) else self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
         elif kind == 'conditional':
-            x_new_l, x_new_h, x_new = conditional_sample(self.maskgit, n_samples, self.device, class_index, self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
+            x_new_l, x_new_h, x_new = conditional_sample(self.maskgit, n_samples, self.device, class_index, batch_size=batch_size if not isinstance(batch_size, type(None)) else self.batch_size)  # (b c l); b=n_samples, c=1 (univariate)
         else:
             raise ValueError
 
