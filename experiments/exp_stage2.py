@@ -91,7 +91,7 @@ class ExpStage2(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['lr'])
-        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage2'], self.config['exp_params']['linear_warmup_rate'])
+        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage2'], self.config['exp_params']['linear_warmup_rate'], min_lr=self.config['exp_params']['min_lr'])
         return {'optimizer': opt, 'lr_scheduler': scheduler}
 
     def _visualize_generated_timeseries(self, xhat_l, xhat_h, xhat):

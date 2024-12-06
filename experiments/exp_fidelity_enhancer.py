@@ -48,7 +48,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
                               'use_custom_dataset':use_custom_dataset
                               }
         ckpt_fname = os.path.join('saved_models', f'stage2-{dataset_name}.ckpt')
-        stage2 = ExpStage2.load_from_checkpoint(ckpt_fname, **exp_maskgit_config, map_location='cpu')
+        stage2 = ExpStage2.load_from_checkpoint(ckpt_fname, **exp_maskgit_config, map_location='cpu', strict=False)
         print('\nThe pretrained ExpStage2 is loaded.\n')
         freeze(stage2)
         stage2.eval()
@@ -181,6 +181,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
         # log
         loss = fidelity_enhancer_loss + percept_loss
+        self.log('global_step', self.global_step)
         loss_hist = {'loss':loss,
                      'fidelity_enhancer_loss':fidelity_enhancer_loss,
                      'percept_loss':percept_loss
@@ -206,6 +207,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
         # log
         loss = fidelity_enhancer_loss + percept_loss
+        self.log('global_step', self.global_step)
         loss_hist = {'loss':loss,
                      'fidelity_enhancer_loss':fidelity_enhancer_loss,
                      'percept_loss':percept_loss
@@ -304,12 +306,12 @@ class ExpFidelityEnhancer(pl.LightningModule):
                 plt.scatter(Z_embed[:, 0], Z_embed[:, 1], alpha=0.1, label=label)
             plt.legend(loc='upper right')
             plt.tight_layout()
-            self.logger.log_image(key=f"PCA on Z ({labels})", images=[wandb.Image(plt),])
+            self.logger.log_image(key=f"PCA on Z ({'-'.join(labels)})", images=[wandb.Image(plt),])
             plt.close()
 
         return loss_hist
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['lr'])
-        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage_fid_enhancer'], self.config['exp_params']['linear_warmup_rate'])
+        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage_fid_enhancer'], self.config['exp_params']['linear_warmup_rate'], min_lr=self.config['exp_params']['min_lr'])
         return {'optimizer': opt, 'lr_scheduler': scheduler}
