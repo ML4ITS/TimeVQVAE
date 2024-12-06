@@ -7,18 +7,19 @@ dataset:
   num_workers: 0
 
 exp_params:
-  lr: 0.001
+  lr: 0.005
   linear_warmup_rate: 0.05
+  min_lr: 0.0005
 
 trainer_params:
   max_steps:
     stage1: 20000 #50000
-    stage2: 200000
-    stage_fid_enhancer: 50000
+    stage2: 40000
+    stage_fid_enhancer: 30000
   val_check_interval:
     stage1: 1000
     stage2: 1000
-    stage_fid_enhancer: 2500
+    stage_fid_enhancer: 1000
 
 encoder:
   init_dim: 4  # initial dimension
@@ -43,10 +44,10 @@ VQ-VAE:
 MaskGIT:
   choice_temperatures: # higher temp -> higher sample diversity
     lf: 10
-    hf: 4
+    hf: 0
   T:  # num sampling (iterative decoding) steps
     lf: 10
-    hf: 4
+    hf: 10
   prior_model_l:
     hidden_dim: 128
     n_layers: 4
@@ -66,9 +67,9 @@ MaskGIT:
     model_dropout: 0.3
     emb_dropout: 0.3
   cfg_scale: 1.  # classifier-free guidance scale
-  # ESS:  # under maintenance
-  #   use: False
-  #   error_ratio_ma_rate: 0.3
+  ESS:  # under maintenance
+    use: False
+    error_ratio_ma_rate: 0.3
 
 
 
