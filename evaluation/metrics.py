@@ -34,7 +34,7 @@ def sample(batch_size:int, maskgit, device, n_samples: int, kind: str, class_ind
     return x_new_l, x_new_h, x_new
 
 
-class Metrics(nn.Module):
+class Metrics(object):
     """
     - FID
     - IS
@@ -51,7 +51,6 @@ class Metrics(nn.Module):
                  batch_size: int=32,
                  use_custom_dataset:bool=False
                  ):
-        super().__init__()
         self.dataset_name = dataset_name
         self.feature_extractor_type = feature_extractor_type
         self.batch_size = batch_size
