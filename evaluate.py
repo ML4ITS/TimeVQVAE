@@ -28,8 +28,9 @@ def load_args():
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
     parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Use the fidelity enhancer')
-    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
+    parser.add_argument('--feature_extractor_type', type=str, default='supervised_fcn', help='supervised_fcn | rocket')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
+    parser.add_argument('--sampling_batch_size', type=int, default=None, help='batch size when sampling.')
     return parser.parse_args()
 
 
@@ -40,6 +41,7 @@ def evaluate(config: dict,
              use_fidelity_enhancer:bool,
              feature_extractor_type:str,
              use_custom_dataset:bool=False,
+             sampling_batch_size=None,
              rand_seed:Union[int,None]=None,
              ):
     """
@@ -64,7 +66,7 @@ def evaluate(config: dict,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
-    (_, _, xhat), xhat_R = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional')
+    (_, _, xhat), xhat_R = evaluation.sample(max(evaluation.X_test.shape[0], min_num_gen_samples), 'unconditional', batch_size=sampling_batch_size)
     z_train = evaluation.z_train
     z_test = evaluation.z_test
     z_rec_train = evaluation.compute_z_rec('train')
@@ -199,7 +201,7 @@ if __name__ == '__main__':
             train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type, args.use_custom_dataset)
+        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type, args.use_custom_dataset, args.sampling_batch_size)
 
         # clean memory
         torch.cuda.empty_cache()
