@@ -630,13 +630,14 @@ class BidirectionalTransformer(nn.Module):
         self.class_condition_emb = nn.Embedding(n_classes + 1, in_dim)  # `+1` is for no-condition
         self.proj_in = nn.Linear(in_dim, hidden_dim)
         self.blocks = TransformerBlocks(dim=hidden_dim, depth=n_layers, dim_head=64, heads=heads, ff_mult=ff_mult)
-        self.pred_head = nn.Sequential(*[
-            weight_norm(nn.Linear(in_features=hidden_dim, out_features=out_dim)),
-            nn.GELU(),
-            nn.LayerNorm(out_dim, eps=1e-12)
-        ])
         codebook_size = codebook_sizes['lf'] if kind == 'lf' else codebook_sizes['hf']
-        self.bias = nn.Parameter(torch.zeros(self.num_tokens, codebook_size + 1))
+        self.pred_head = nn.Sequential(*[
+            weight_norm(nn.Linear(in_features=hidden_dim, out_features=hidden_dim)),
+            nn.GELU(),
+            nn.LayerNorm(hidden_dim, eps=1e-12),
+            weight_norm(nn.Linear(in_features=hidden_dim, out_features=codebook_size)),
+        ])
+        # self.bias = nn.Parameter(torch.zeros(self.num_tokens, codebook_size + 1))
 
         if kind == 'hf':
             self.projector = Upscale(embed_dim, embed_dim, 2*embed_dim)
@@ -678,10 +679,11 @@ class BidirectionalTransformer(nn.Module):
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
         embed = self.proj_in(embed)
         embed = self.blocks(embed)  # (b, 1+n, dim)
-        embed = self.pred_head(embed)[:, 1:, :]  # (b, n, dim)
+        logits = self.pred_head(embed)[:, 1:, :]  # (b, n, dim)
 
-        logits = torch.matmul(embed, self.tok_emb_l.weight.T) + self.bias  # (b, n, codebook_size+1)
-        logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
+        # logits = torch.matmul(embed, self.tok_emb_l.weight.T) + self.bias  # (b, n, codebook_size+1)
+        # logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, n, codebook_size)
+        # return logits
         return logits
 
     def forward_hf(self, s_l, s_M_h, class_condition=None):
@@ -709,10 +711,11 @@ class BidirectionalTransformer(nn.Module):
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
         embed = self.proj_in(embed)
         embed = self.blocks(embed)  # (b, 1+m, 2*dim)
-        embed = self.pred_head(embed)[:, 1:, :]  # (b, m, dim)
+        logits = self.pred_head(embed)[:, 1:, :]  # (b, m, dim)
 
-        logits = torch.matmul(embed, self.tok_emb_h.weight.T) + self.bias  # (b, m, codebook_size+1)
-        logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, m, codebook_size)
+        # logits = torch.matmul(embed, self.tok_emb_h.weight.T) + self.bias  # (b, m, codebook_size+1)
+        # logits = logits[:, :, :-1]  # remove the logit for the mask token.  # (b, m, codebook_size)
+        # return logits
         return logits
 
     def forward(self, s_M_l, s_M_h=None, class_condition: Union[None, torch.Tensor] = None):
