@@ -2,8 +2,8 @@ dataset:
   data_scaling: True
   batch_sizes:
     stage1: 32
-    stage2: 16
-    stage_fid_enhancer: 16
+    stage2: 32
+    stage_fid_enhancer: 32
   num_workers: 0
 
 exp_params:

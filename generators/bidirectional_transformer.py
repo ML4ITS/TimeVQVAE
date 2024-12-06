@@ -628,9 +628,10 @@ class BidirectionalTransformer(nn.Module):
         # transformer
         self.pos_emb = nn.Embedding(self.num_tokens + 1, in_dim)
         self.class_condition_emb = nn.Embedding(n_classes + 1, in_dim)  # `+1` is for no-condition
-        self.blocks = TransformerBlocks(dim=in_dim, depth=n_layers, dim_head=64, heads=heads, ff_mult=ff_mult)
+        self.proj_in = nn.Linear(in_dim, hidden_dim)
+        self.blocks = TransformerBlocks(dim=hidden_dim, depth=n_layers, dim_head=64, heads=heads, ff_mult=ff_mult)
         self.pred_head = nn.Sequential(*[
-            weight_norm(nn.Linear(in_features=in_dim, out_features=out_dim)),
+            weight_norm(nn.Linear(in_features=hidden_dim, out_features=out_dim)),
             nn.GELU(),
             nn.LayerNorm(out_dim, eps=1e-12)
         ])
@@ -675,6 +676,7 @@ class BidirectionalTransformer(nn.Module):
         position_embeddings = self.pos_emb.weight[:n, :]
         embed = token_embeddings + position_embeddings  # (b, n, dim)
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+n, dim)
+        embed = self.proj_in(embed)
         embed = self.blocks(embed)  # (b, 1+n, dim)
         embed = self.pred_head(embed)[:, 1:, :]  # (b, n, dim)
 
@@ -705,6 +707,7 @@ class BidirectionalTransformer(nn.Module):
         position_embeddings = self.pos_emb.weight[:n, :]
         embed = token_embeddings + position_embeddings
         embed = torch.cat((cls_emb, embed), dim=1)  # (b, 1+m, 2*dim)
+        embed = self.proj_in(embed)
         embed = self.blocks(embed)  # (b, 1+m, 2*dim)
         embed = self.pred_head(embed)[:, 1:, :]  # (b, m, dim)
 
