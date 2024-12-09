@@ -25,7 +25,7 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_ind', nargs='+', default=[0], type=int, help='Indices of GPU devices to use.')
-    parser.add_argument('--feature_extractor_type', type=str, default='supervised_fcn', help='supervised_fcn | rocket')
+    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     return parser.parse_args()
 
