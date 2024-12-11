@@ -72,7 +72,8 @@ def evaluate(config: dict,
     z_rec_train = evaluation.compute_z_rec('train')
     z_rec_test = evaluation.compute_z_rec('test')
     zhat = evaluation.compute_z_gen(xhat)
-
+    
+    # compute FID and IS
     print('evaluation for unconditional sampling...')
     wandb.log({'FID': evaluation.fid_score(z_test, zhat)})
     if not use_custom_dataset:
@@ -138,9 +139,23 @@ def evaluate(config: dict,
     axes1 = axes1.flatten()
     axes2 = axes2.flatten()
     axes3 = axes3.flatten()
+    n_cls_samples = []
+    cfids, cfids_nm = [], []
     for cls_idx in range(n_classes):
         (_, _, xhat_c), xhat_c_R = evaluation.sample(n_plot_samples_per_class, kind='conditional', class_index=cls_idx)
+        
         cls_sample_ind = (evaluation.Y_test[:,0] == cls_idx)  # (b,)
+        n_cls_samples.append(cls_sample_ind.astype(float).sum())
+
+        z_test = evaluation.compute_z_gen(torch.from_numpy(evaluation.X_test[cls_sample_ind]))
+        zhat = evaluation.compute_z_gen(xhat_c)
+        cfid = evaluation.fid_score(z_test, zhat)
+        cfids.append(cfid)
+        wandb.log({f'cFID-cls_{cls_idx}': cfid})
+        if use_fidelity_enhancer:
+            cfid_nm = evaluation.fid_score(z_test, zhat_R)
+            cfids_nm.append(cfid_nm)
+            wandb.log({f'cFID+FE-cls_{cls_idx}': cfid})
 
         X_test_c = evaluation.X_test[cls_sample_ind]  # (b' 1 l)
         sample_ind = np.random.randint(0, X_test_c.shape[0], n_plot_samples_per_class)
@@ -163,14 +178,45 @@ def evaluate(config: dict,
     fig2.tight_layout()
     wandb.log({"X_test_c": wandb.Image(fig1)})
     wandb.log({f"Xhat_c": wandb.Image(fig2)})
+    wandb.log({f'cFID': np.mean(cfids)})
 
     if use_fidelity_enhancer:
         fig3.tight_layout()
         wandb.log({f"Xhat_R_c": wandb.Image(fig3)})
+        wandb.log({f'cFID+FE': np.mean(cfids_nm)})
 
     plt.close(fig1)
     plt.close(fig2)
     plt.close(fig3)
+
+    # bar graph of cfids
+    fig, ax = plt.subplots()
+    ax.bar(range(n_classes), cfids)
+    ax.set_xlabel('Class Index')
+    ax.set_ylabel('FID per class')
+    ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
+    wandb.log({"cFID": wandb.Image(fig)})
+    plt.close(fig)
+
+    fig, ax = plt.subplots()
+    ax.bar(range(n_classes), cfids_nm)
+    ax.set_xlabel('Class Index')
+    ax.set_ylabel('FID with FE per class')
+    ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
+    wandb.log({"cFID+FE": wandb.Image(fig)})
+    plt.close(fig)
+
+    # plot bar graph of n_cls_samples
+    fig, ax = plt.subplots()
+    ax.bar(range(n_classes), n_cls_samples)
+    ax.set_xlabel('Class Index')
+    ax.set_ylabel('num samples per class')
+    ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
+    wandb.log({"n_cls_samples": wandb.Image(fig)})
+    plt.close(fig)
+    
+    # compute cFID (conditional FID)
+    wandb.log({'FID': evaluation.fid_score(z_test, zhat)})
 
     wandb.finish()
 
