@@ -195,7 +195,7 @@ def evaluate(config: dict,
     ax.set_xlabel('Class Index')
     ax.set_ylabel('FID per class')
     ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
-    wandb.log({"cFID": wandb.Image(fig)})
+    wandb.log({"cFID_bar": wandb.Image(fig)})
     plt.close(fig)
 
     fig, ax = plt.subplots()
@@ -203,7 +203,7 @@ def evaluate(config: dict,
     ax.set_xlabel('Class Index')
     ax.set_ylabel('FID with FE per class')
     ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
-    wandb.log({"cFID+FE": wandb.Image(fig)})
+    wandb.log({"cFID+FE_bar": wandb.Image(fig)})
     plt.close(fig)
 
     # plot bar graph of n_cls_samples
