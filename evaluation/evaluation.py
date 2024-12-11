@@ -373,7 +373,7 @@ class Evaluation(nn.Module):
             plt.xlim(self.xmin_pca-xpad, self.xmax_pca+xpad)
             plt.ylim(self.ymin_pca-ypad, self.ymax_pca+ypad)
 
-        plt.legend(loc='upper right')
+        # plt.legend(loc='upper right')
         plt.tight_layout()
         wandb.log({f"PCA on Z ({'-'.join(labels)})": wandb.Image(plt)})
         plt.close()
