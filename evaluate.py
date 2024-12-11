@@ -147,13 +147,14 @@ def evaluate(config: dict,
         cls_sample_ind = (evaluation.Y_test[:,0] == cls_idx)  # (b,)
         n_cls_samples.append(cls_sample_ind.astype(float).sum())
 
-        z_test = evaluation.compute_z_gen(torch.from_numpy(evaluation.X_test[cls_sample_ind]))
-        zhat = evaluation.compute_z_gen(xhat_c)
-        cfid = evaluation.fid_score(z_test, zhat)
+        z_test_c = evaluation.compute_z_gen(torch.from_numpy(evaluation.X_test[cls_sample_ind]))
+        zhat_c = evaluation.compute_z_gen(xhat_c)
+        cfid = evaluation.fid_score(z_test_c, zhat_c)
         cfids.append(cfid)
         wandb.log({f'cFID-cls_{cls_idx}': cfid})
         if use_fidelity_enhancer:
-            cfid_nm = evaluation.fid_score(z_test, zhat_R)
+            zhat_R = evaluation.compute_z_gen(xhat_c_R)
+            cfid_nm = evaluation.fid_score(z_test_c, zhat_R)
             cfids_nm.append(cfid_nm)
             wandb.log({f'cFID+FE-cls_{cls_idx}': cfid})
 
