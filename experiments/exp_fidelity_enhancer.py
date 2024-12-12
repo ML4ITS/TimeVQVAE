@@ -67,9 +67,9 @@ class ExpFidelityEnhancer(pl.LightningModule):
         self.decoder_h = self.maskgit.decoder_h
         self.vq_model_h = self.maskgit.vq_model_h
 
-        log2_rates = np.arange(5, min(int(np.floor(np.log2(input_length))),11)+1)
-        window_lengths = [2**rate for rate in log2_rates]
-        self.msstft_loss_fn = MultiScaleSTFTLoss(window_lengths=window_lengths)
+        # log2_rates = np.arange(5, min(int(np.floor(np.log2(input_length))),11)+1)
+        # window_lengths = [2**rate for rate in log2_rates]
+        # self.msstft_loss_fn = MultiScaleSTFTLoss(window_lengths=window_lengths)
 
         self.minirocket = MiniRocketTransform(input_length)
         freeze(self.minirocket)
@@ -157,7 +157,8 @@ class ExpFidelityEnhancer(pl.LightningModule):
         xprime = xprime.detach()
 
         xhat = self.fidelity_enhancer(xprime)
-        recons_loss = self.msstft_loss_fn(xhat, x) + 0.1*F.l1_loss(xhat, x)
+        # recons_loss = self.msstft_loss_fn(xhat, x) + 0.1*F.l1_loss(xhat, x)
+        recons_loss = F.l1_loss(xhat, x)
 
         fidelity_enhancer_loss = recons_loss
         return fidelity_enhancer_loss, (xprime, xhat)
