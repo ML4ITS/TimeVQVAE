@@ -62,15 +62,12 @@ class Metrics(object):
         self.n_classes = n_classes
         
         # load a model
-        if self.feature_extractor_type == 'supervised_fcn':
-            self.fcn = load_pretrained_FCN(dataset_name)
-            freeze(self.fcn)
-            self.fcn.eval()
-        elif self.feature_extractor_type == 'rocket':
-            input_length = self.X_train.shape[-1]
-            self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
-        else:
-            raise ValueError
+        self.fcn = load_pretrained_FCN(dataset_name)
+        freeze(self.fcn)
+        self.fcn.eval()
+        
+        input_length = self.X_train.shape[-1]
+        self.rocket_kernels = generate_kernels(input_length, num_kernels=rocket_num_kernels)
         
         # compute z_train, z_test
         self.z_train = self.compute_z(self.X_train)  # (b d)
@@ -80,14 +77,16 @@ class Metrics(object):
     def sample(self, maskgit, device, n_samples: int, kind: str, class_index:Union[None,int]):
         return sample(self.batch_size, maskgit, device, n_samples, kind, class_index)
         
-    def extract_feature_representations(self, x:np.ndarray):
+    def extract_feature_representations(self, x:np.ndarray, feature_extractor_type:str=None):
         """
         x: (b 1 l)
         """
-        if self.feature_extractor_type == 'supervised_fcn':
+        feature_extractor_type = feature_extractor_type if not isinstance(feature_extractor_type, type(None)) else self.feature_extractor_type
+
+        if feature_extractor_type == 'supervised_fcn':
             device = next(self.fcn.parameters()).device
             z = self.fcn(torch.from_numpy(x).float().to(device), return_feature_vector=True).cpu().detach().numpy()  # (b d)
-        elif self.feature_extractor_type == 'rocket':
+        elif feature_extractor_type == 'rocket':
             x = x[:,0,:].astype(float)  # (b l)
             z = apply_kernels(x, self.rocket_kernels)  # (b d)
             z = F.normalize(torch.from_numpy(z), p=2, dim=1).numpy()
