@@ -213,6 +213,7 @@ def evaluate(config: dict,
     ax.set_xlabel('Class Index')
     ax.set_ylabel('num samples per class')
     ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
+    print('n_cls_samples:', n_cls_samples)
     wandb.log({"n_cls_samples": wandb.Image(fig)})
     plt.close(fig)
     
