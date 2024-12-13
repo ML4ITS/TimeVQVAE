@@ -98,8 +98,12 @@ class ExpFidelityEnhancer(pl.LightningModule):
             x_new = x_new_l + x_new_h
             Xhat = torch.cat((Xhat, x_new))
         Xhat = Xhat.numpy().astype(float)
-        Zhat = self.metrics.extract_feature_representations(Xhat)  # (b d)
+        Zhat = self.metrics.extract_feature_representations(Xhat, 'rocket')  # (b d)
         
+        rind_hat_100 = np.random.randint(0, Xhat.shape[0], size=100)
+        rind_prime_100 = np.random.randint(0, X_train.shape[0], size=100)
+        rind_hat_200 = np.random.randint(0, Xhat.shape[0], size=200)
+        rind_prime_200 = np.random.randint(0, X_train.shape[0], size=200)
         fids = []
         for i, tau in enumerate(self.tau_search_rng):
             print(f'searching optimal tau... ({round((i)/len(self.tau_search_rng) * 100, 1)}%)')
@@ -117,7 +121,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
                 Xprime.append(xprime)
             Xprime = np.concatenate(Xprime)
             
-            Z_prime = self.metrics.extract_feature_representations(Xprime)  # (b d)
+            Z_prime = self.metrics.extract_feature_representations(Xprime, 'rocket')  # (b d)
             
             fid = self.metrics.fid_score(Zhat, Z_prime)
             fids.append(fid)
@@ -125,18 +129,22 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
             # ====
             fig, axes = plt.subplots(3, 1, figsize=(4, 2*3))
-            fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid,4)})')
-            axes[0].set_title('xhat')
-            axes[0].plot(Xhat[:100,0,:].T, color='C0', alpha=0.2)
-            axes[1].set_title('x`')
-            axes[1].plot(Xprime[:100,0,:].T, color='C0', alpha=0.2)
+            # fig.suptitle(f'xhat vs x` (tau:{tau}, fid:{round(fid,4)})')
+            fig.suptitle(r'$\hat{x}$ vs $\tilde{x}^\prime$' + f' | tau:{tau}, fid:{round(fid,4)}')
+            axes[0].set_title(r'$\hat{x}$')
+            axes[0].plot(Xhat[rind_hat_100,0,:].T, color='C0', alpha=0.2)
+            axes[0].set_ylim(-5, 5)
+            axes[1].set_title(r'$\tilde{x}^\prime$')
+            axes[1].plot(Xprime[rind_prime_100,0,:].T, color='C0', alpha=0.2)
+            axes[1].set_ylim(-5, 5)
 
             pca = PCA(n_components=2)
             Zhat_pca = pca.fit_transform(Zhat)
             Z_prime_pca = pca.transform(Z_prime)
-
-            axes[2].scatter(Zhat_pca[:100,0], Zhat_pca[:100,1], alpha=0.2)
-            axes[2].scatter(Z_prime_pca[:100,0], Z_prime_pca[:100,1], alpha=0.2)
+            
+            axes[2].set_title('comparison in a latent space')
+            axes[2].scatter(Zhat_pca[rind_hat_200,0], Zhat_pca[rind_hat_200,1], alpha=0.2)
+            axes[2].scatter(Z_prime_pca[rind_prime_200,0], Z_prime_pca[rind_prime_200,1], alpha=0.2)
 
             plt.tight_layout()
             wandb_logger.log_image(key='Xhat vs Xprime', images=[wandb.Image(plt),])
