@@ -27,8 +27,8 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', default=0, type=int)
-    parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Use the fidelity enhancer')
-    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
+    parser.add_argument('--use_neural_mapper', type=str2bool, default=False, help='Use the neural mapper')
+    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket for evaluation.')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     parser.add_argument('--sampling_batch_size', type=int, default=None, help='batch size when sampling.')
     return parser.parse_args()
@@ -38,7 +38,7 @@ def evaluate(config: dict,
              dataset_name: str,
              train_data_loader: DataLoader,
              gpu_device_idx,
-             use_fidelity_enhancer:bool,
+             use_neural_mapper:bool,
              feature_extractor_type:str,
              use_custom_dataset:bool=False,
              sampling_batch_size=None,
@@ -57,12 +57,12 @@ def evaluate(config: dict,
     
     # wandb init
     wandb.init(project='TimeVQVAE-evaluation', 
-               config={**config, 'dataset_name': dataset_name, 'use_fidelity_enhancer':use_fidelity_enhancer, 'feature_extractor_type':feature_extractor_type})
+               config={**config, 'dataset_name': dataset_name, 'use_neural_mapper':use_neural_mapper, 'feature_extractor_type':feature_extractor_type})
 
     # unconditional sampling
     print('evaluating...')
     evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, gpu_device_idx, config, 
-                            use_fidelity_enhancer=use_fidelity_enhancer,
+                            use_neural_mapper=use_neural_mapper,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(gpu_device_idx)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution
@@ -98,7 +98,7 @@ def evaluate(config: dict,
     mdd, acd, sd, kd = evaluation.stat_metrics(evaluation.X_test, xhat)
     wandb.log({'MDD':mdd, 'ACD':acd, 'SD':sd, 'KD':kd})
     
-    if use_fidelity_enhancer:
+    if use_neural_mapper:
         z_svq_train, x_prime_train = evaluation.compute_z_svq('train')
         z_svq_test, x_prime_test = evaluation.compute_z_svq('test')
         zhat_R = evaluation.compute_z_gen(xhat_R)
@@ -110,9 +110,9 @@ def evaluate(config: dict,
         evaluation.log_pca([z_test, z_svq_test], ['Z_test', 'Z_svq_test'])
 
         IS_mean, IS_std = evaluation.inception_score(xhat_R)
-        wandb.log({'FID with FE': evaluation.fid_score(z_test, zhat_R),
-                   'IS_mean with FE': IS_mean,
-                   'IS_std with FE': IS_std})
+        wandb.log({'FID with NM': evaluation.fid_score(z_test, zhat_R),
+                   'IS_mean with NM': IS_mean,
+                   'IS_std with NM': IS_std})
         
         evaluation.log_visual_inspection(evaluation.X_train, xhat_R, 'X_train vs Xhat_R')
         evaluation.log_visual_inspection(evaluation.X_test, xhat_R, 'X_test vs Xhat_R')
@@ -122,7 +122,7 @@ def evaluate(config: dict,
         evaluation.log_pca([z_test, zhat_R], ['Z_test', 'Zhat_R'])
 
         mdd, acd, sd, kd = evaluation.stat_metrics(evaluation.X_test, xhat_R)
-        wandb.log({'MDD with FE':mdd, 'ACD with FE':acd, 'SD with FE':sd, 'KD with FE':kd})
+        wandb.log({'MDD with NM':mdd, 'ACD with NM':acd, 'SD with NM':sd, 'KD with NM':kd})
         
     # class-conditional sampling
     print('evaluation for class-conditional sampling...')
@@ -152,11 +152,11 @@ def evaluate(config: dict,
         cfid = evaluation.fid_score(z_test_c, zhat_c)
         cfids.append(cfid)
         wandb.log({f'cFID-cls_{cls_idx}': cfid})
-        if use_fidelity_enhancer:
+        if use_neural_mapper:
             zhat_R = evaluation.compute_z_gen(xhat_c_R)
             cfid_nm = evaluation.fid_score(z_test_c, zhat_R)
             cfids_nm.append(cfid_nm)
-            wandb.log({f'cFID+FE-cls_{cls_idx}': cfid})
+            wandb.log({f'cFID+NM-cls_{cls_idx}': cfid})
 
         X_test_c = evaluation.X_test[cls_sample_ind]  # (b' 1 l)
         sample_ind = np.random.randint(0, X_test_c.shape[0], n_plot_samples_per_class)
@@ -169,7 +169,7 @@ def evaluate(config: dict,
         axes2[cls_idx].set_title(f'cls_idx:{cls_idx}')
         axes2[cls_idx].set_ylim(*ylim)
 
-        if use_fidelity_enhancer:
+        if use_neural_mapper:
             sample_ind = np.random.randint(0, xhat_c_R.shape[0], n_plot_samples_per_class)
             axes3[cls_idx].plot(xhat_c_R[sample_ind,0,:].T, alpha=alpha, color='C0')
             axes3[cls_idx].set_title(f'cls_idx:{cls_idx}')
@@ -181,10 +181,10 @@ def evaluate(config: dict,
     wandb.log({f"Xhat_c": wandb.Image(fig2)})
     wandb.log({f'cFID': np.mean(cfids)})
 
-    if use_fidelity_enhancer:
+    if use_neural_mapper:
         fig3.tight_layout()
         wandb.log({f"Xhat_R_c": wandb.Image(fig3)})
-        wandb.log({f'cFID+FE': np.mean(cfids_nm)})
+        wandb.log({f'cFID+NM': np.mean(cfids_nm)})
 
     plt.close(fig1)
     plt.close(fig2)
@@ -199,13 +199,14 @@ def evaluate(config: dict,
     wandb.log({"cFID_bar": wandb.Image(fig)})
     plt.close(fig)
 
-    fig, ax = plt.subplots()
-    ax.bar(range(n_classes), cfids_nm)
-    ax.set_xlabel('Class Index')
-    ax.set_ylabel('FID with FE per class')
-    ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
-    wandb.log({"cFID+FE_bar": wandb.Image(fig)})
-    plt.close(fig)
+    if use_neural_mapper:
+        fig, ax = plt.subplots()
+        ax.bar(range(n_classes), cfids_nm)
+        ax.set_xlabel('Class Index')
+        ax.set_ylabel('FID with NM per class')
+        ax.set_xticks(range(n_classes))  # Ensure x-axis labels are integers only
+        wandb.log({"cFID+FE_bar": wandb.Image(fig)})
+        plt.close(fig)
 
     # plot bar graph of n_cls_samples
     fig, ax = plt.subplots()
@@ -249,7 +250,7 @@ if __name__ == '__main__':
             train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_fidelity_enhancer, args.feature_extractor_type, args.use_custom_dataset, args.sampling_batch_size)
+        evaluate(config, dataset_name, train_data_loader, args.gpu_device_idx, args.use_neural_mapper, args.feature_extractor_type, args.use_custom_dataset, args.sampling_batch_size)
 
         # clean memory
         torch.cuda.empty_cache()

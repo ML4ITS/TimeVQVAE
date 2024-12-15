@@ -27,7 +27,7 @@ def load_args():
 
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_idx', type=int, help="GPU device index", default=0)
-    parser.add_argument('--use_fidelity_enhancer', type=str2bool, default=False, help='Use the fidelity enhancer')
+    parser.add_argument('--use_neural_mapper', type=str2bool, default=False, help='Use the neural mapper')
     parser.add_argument('--min_n_synthetic_train_samples', type=int, default=1000, help='It ensures a minimum number of a number of synthetic training set size to guarantee `y ∼ pθ(y|x) = pθ(x|y)p(y)/pθ(x)`.')
     return parser.parse_args()
 
@@ -54,7 +54,7 @@ if __name__ == '__main__':
                        dataset_name,
                        config,
                        device,
-                       args.use_fidelity_enhancer),
+                       args.use_neural_mapper),
             batch_size=batch_size,
             num_workers=config_cas['dataset']['num_workers'],
             shuffle=True,

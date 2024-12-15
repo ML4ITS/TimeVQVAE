@@ -1,6 +1,3 @@
-"""
-FID, IS, JS divergence.
-"""
 import os
 from typing import List, Union, Tuple
 
@@ -22,7 +19,7 @@ from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FC
 from supervised_FCN_2.example_compute_FID import calculate_fid
 from supervised_FCN_2.example_compute_IS import calculate_inception_score
 from utils import time_to_timefreq, timefreq_to_time
-from generators.fidelity_enhancer import FidelityEnhancer
+from generators.neural_mapper import NeuralMapper
 from evaluation.rocket_functions import generate_kernels, apply_kernels
 from utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
 from evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
@@ -44,7 +41,7 @@ class Evaluation(nn.Module):
                  n_classes:int, 
                  device:int, 
                  config:dict, 
-                 use_fidelity_enhancer:bool=False,
+                 use_neural_mapper:bool=False,
                  feature_extractor_type:str='rocket',
                  rocket_num_kernels:int=1000,
                  use_custom_dataset:bool=False
@@ -82,7 +79,7 @@ class Evaluation(nn.Module):
                                                       input_length=input_length, 
                                                       config=config,
                                                       n_classes=n_classes,
-                                                      use_fidelity_enhancer=False,
+                                                    #   use_neural_mapper=False,
                                                       feature_extractor_type=feature_extractor_type,
                                                       use_custom_dataset=use_custom_dataset,
                                                       map_location='cpu',
@@ -91,14 +88,14 @@ class Evaluation(nn.Module):
         self.maskgit = self.stage2.maskgit
         self.stage1 = self.stage2.maskgit.stage1
 
-        # load the fidelity enhancer
-        if use_fidelity_enhancer:
-            self.fidelity_enhancer = FidelityEnhancer(self.ts_len, 1, config)
-            fname = f'fidelity_enhancer-{dataset_name}.ckpt'
+        # load the neural mapper
+        if use_neural_mapper:
+            self.neural_mapper = NeuralMapper(self.ts_len, 1, config)
+            fname = f'neural_mapper-{dataset_name}.ckpt'
             ckpt_fname = os.path.join('saved_models', fname)
-            self.fidelity_enhancer.load_state_dict(torch.load(ckpt_fname))
+            self.neural_mapper.load_state_dict(torch.load(ckpt_fname))
         else:
-            self.fidelity_enhancer = nn.Identity()
+            self.neural_mapper = nn.Identity()
 
         # fit PCA on a training set
         self.pca = PCA(n_components=2, random_state=0)
@@ -127,14 +124,14 @@ class Evaluation(nn.Module):
         else:
             raise ValueError
 
-        # FE
+        # NM
         num_batches = x_new.shape[0] // self.batch_size + (1 if x_new.shape[0] % self.batch_size != 0 else 0)
         X_new_R = []
         for i in range(num_batches):
             start_idx = i * self.batch_size
             end_idx = start_idx + self.batch_size
             mini_batch = x_new[start_idx:end_idx]
-            x_new_R = self.fidelity_enhancer(mini_batch.to(self.device)).cpu()
+            x_new_R = self.neural_mapper(mini_batch.to(self.device)).cpu()
             X_new_R.append(x_new_R)
         X_new_R = torch.cat(X_new_R)
 
@@ -217,10 +214,10 @@ class Evaluation(nn.Module):
             x = torch.from_numpy(x).float().to(self.device)
             
             # x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
-            # svq_temp_rng = self.config['fidelity_enhancer']['svq_temp_rng']
+            # svq_temp_rng = self.config['neural_mapper']['svq_temp_rng']
             # svq_temp = np.random.uniform(*svq_temp_rng)
-            # tau = self.config['fidelity_enhancer']['tau']
-            tau = self.fidelity_enhancer.tau.item()
+            # tau = self.config['neural_mapper']['tau']
+            tau = self.neural_mapper.tau.item()
             _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, svq_temp=tau)  # (b n)
             _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, svq_temp=tau)  # (b m)
             x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'lf')  # (b 1 l)

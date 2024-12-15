@@ -391,23 +391,13 @@ class Unet1D(nn.Module):
         return self.final_conv(x)
 
 
-class FidelityEnhancer(nn.Module):
-    def __init__(self, input_length, in_channels, config):
+class NeuralMapper(nn.Module):
+    def __init__(self, input_length:int, in_channels:int, config:dict):
         super().__init__()
         self.input_length = input_length
-        self.unet = Unet1D(channels=in_channels, **config['fidelity_enhancer'])
+        self.unet = Unet1D(channels=in_channels, **config['neural_mapper'])
         self.register_buffer('tau', torch.tensor(0.).float())
 
-    # def forward(self, x_a):
-    #     """
-    #     :param xhat: (b 1 l)
-    #     :param super_resolution_rate: which factor is x lengthened by? (1 equals no use)
-    #     :return:
-    #     """
-    #     x_a = F.upsample(x_a, size=self.input_length, mode='linear', align_corners=False)
-    #     xhat = self.unet(x_a)  # (b 1 l)
-    #     return xhat
-    
     def forward(self, x_a):
         """
         :param xhat: (b 1 l)

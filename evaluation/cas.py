@@ -74,10 +74,10 @@ class CASDataset(Dataset):
                  dataset_name:str,
                  config: dict,
                  device,
-                 use_fidelity_enhancer:bool,
+                 use_neural_mapper:bool,
                  ):
         super().__init__()
-        self.use_fidelity_enhancer = use_fidelity_enhancer
+        self.use_neural_mapper = use_neural_mapper
         n_train_samples_per_class = dict(Counter(real_train_data_loader.dataset.Y.flatten()))
         n_classes = len(np.unique(real_train_data_loader.dataset.Y))
         input_length = real_train_data_loader.dataset.X.shape[1]
@@ -91,7 +91,7 @@ class CASDataset(Dataset):
         print('n_train_samples_per_class:', n_train_samples_per_class)
         
         # sample synthetic dataset
-        evaluation = Evaluation(dataset_name, input_length, n_classes, device, config, use_fidelity_enhancer).to(device)
+        evaluation = Evaluation(dataset_name, input_length, n_classes, device, config, use_neural_mapper).to(device)
         self.Xhat, self.Xhat_R, self.Y = [], [], []
         for cls_idx, n_samples in n_train_samples_per_class.items():
             print(f'sampling synthetic data | cls_idx: {cls_idx}...')
@@ -104,7 +104,7 @@ class CASDataset(Dataset):
         self.Y = torch.cat(self.Y)[:, None].long()  # (b 1)
     
     def __getitem__(self, idx):
-        xhat = self.Xhat_R[idx] if self.use_fidelity_enhancer else self.Xhat[idx]
+        xhat = self.Xhat_R[idx] if self.use_neural_mapper else self.Xhat[idx]
         y = self.Y[idx]
         return xhat, y
 

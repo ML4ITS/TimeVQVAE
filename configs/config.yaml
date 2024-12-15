@@ -3,7 +3,7 @@ dataset:
   batch_sizes:
     stage1: 32
     stage2: 32
-    stage_fid_enhancer: 32
+    stage_neural_mapper: 32
   num_workers: 0
 
 exp_params:
@@ -15,11 +15,11 @@ trainer_params:
   max_steps:
     stage1: 20000 #50000
     stage2: 40000
-    stage_fid_enhancer: 30000
+    stage_neural_mapper: 3000 #30000
   val_check_interval:
     stage1: 1000
     stage2: 1000
-    stage_fid_enhancer: 1000
+    stage_neural_mapper: 1000
 
 encoder:
   init_dim: 4  # initial dimension
@@ -73,7 +73,7 @@ MaskGIT:
 
 
 
-fidelity_enhancer:
+neural_mapper:
   dim: 8
   dim_mults:
     - 1
@@ -88,9 +88,6 @@ fidelity_enhancer:
     - 1
     - 2
     - 4
-  # tau_search_rng: 
-    # - 512
-  percept_loss_weight: 0. #1000
 
 evaluation:
   batch_size: 32

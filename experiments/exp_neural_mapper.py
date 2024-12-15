@@ -20,12 +20,12 @@ from torch import Tensor
 
 from evaluation.rocket_functions import MiniRocketTransform
 from evaluation.metrics import Metrics
-from generators.fidelity_enhancer import FidelityEnhancer
+from generators.neural_mapper import NeuralMapper
 from experiments.exp_stage2 import ExpStage2
 from utils import freeze, zero_pad_low_freq, zero_pad_high_freq, linear_warmup_cosine_annealingLR, time_to_timefreq
 
 
-class ExpFidelityEnhancer(pl.LightningModule):
+class ExpNeuralMapper(pl.LightningModule):
     def __init__(self,
                  dataset_name: str,
                  in_channels:int,
@@ -39,10 +39,10 @@ class ExpFidelityEnhancer(pl.LightningModule):
         self.config = config
         self.use_custom_dataset = use_custom_dataset
         self.n_fft = config['VQ-VAE']['n_fft']
-        self.tau_search_rng = config['fidelity_enhancer']['tau_search_rng']
+        self.tau_search_rng = config['neural_mapper']['tau_search_rng']
 
-        # FE
-        self.fidelity_enhancer = FidelityEnhancer(input_length, in_channels, config)
+        # NM
+        self.neural_mapper = NeuralMapper(input_length, in_channels, config)
 
         # load the stage2 model
         exp_maskgit_config = {'dataset_name':dataset_name, 
@@ -73,7 +73,6 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
         self.minirocket = MiniRocketTransform(input_length)
         freeze(self.minirocket)
-        self.percept_loss_weight = config['fidelity_enhancer']['percept_loss_weight']
 
         self.metrics = Metrics(config, dataset_name, n_classes, feature_extractor_type, use_custom_dataset=use_custom_dataset)
 
@@ -155,55 +154,44 @@ class ExpFidelityEnhancer(pl.LightningModule):
         optimal_idx = np.argmin(fids)
         optimal_tau = self.tau_search_rng[optimal_idx]
         print('** optimal_tau **:', optimal_tau)
-        self.fidelity_enhancer.tau = torch.tensor(optimal_tau).float()
+        self.neural_mapper.tau = torch.tensor(optimal_tau).float()
 
-    def _fidelity_enhancer_loss_fn(self, x, sprime_l, sprime_h):
+    def _neural_mapper_loss_fn(self, x, sprime_l, sprime_h):
         # s -> z -> x
         xprime_l = self.maskgit.decode_token_ind_to_timeseries(sprime_l, 'lf')  # (b 1 l)
         xprime_h = self.maskgit.decode_token_ind_to_timeseries(sprime_h, 'hf')  # (b 1 l)
         xprime = xprime_l + xprime_h  # (b c l)
         xprime = xprime.detach()
 
-        xhat = self.fidelity_enhancer(xprime)
+        xhat = self.neural_mapper(xprime)
         # recons_loss = self.msstft_loss_fn(xhat, x) + 0.1*F.l1_loss(xhat, x)
         recons_loss = F.l1_loss(xhat, x)
 
-        fidelity_enhancer_loss = recons_loss
-        return fidelity_enhancer_loss, (xprime, xhat)
-    
-    def _perceptual_loss_fn(self, x, xprime_R):
-        if self.percept_loss_weight > 0:
-            out = self.minirocket(torch.cat((xprime_R, x), dim=0))  # (2b d)
-            out = rearrange(out, '(a b) d -> a b d', b=x.shape[0])  # (2 b d)
-            percept_loss = self.percept_loss_weight * F.mse_loss(out[0,:,:], out[1,:,:])
-        else:
-            percept_loss = 0.
-        return percept_loss
+        neural_mapper_loss = recons_loss
+        return neural_mapper_loss, (xprime, xhat)
 
     def training_step(self, batch, batch_idx):
         self.eval()
-        self.fidelity_enhancer.train()
+        self.neural_mapper.train()
 
         x, y = batch
         x = x.float()
 
-        tau = self.fidelity_enhancer.tau.item()
+        tau = self.neural_mapper.tau.item()
         _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, svq_temp=tau)  # (b n)
         _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, svq_temp=tau)  # (b m)
 
-        fidelity_enhancer_loss, (xprime, xprime_R) = self._fidelity_enhancer_loss_fn(x, sprime_l, sprime_h)
-        percept_loss = self._perceptual_loss_fn(x, xprime_R)
+        neural_mapper_loss, (xprime, xprime_R) = self._neural_mapper_loss_fn(x, sprime_l, sprime_h)
 
         # lr scheduler
         sch = self.lr_schedulers()
         sch.step()
 
         # log
-        loss = fidelity_enhancer_loss + percept_loss
+        loss = neural_mapper_loss
         self.log('global_step', self.global_step)
         loss_hist = {'loss':loss,
-                     'fidelity_enhancer_loss':fidelity_enhancer_loss,
-                     'percept_loss':percept_loss
+                     'neural_mapper_loss':neural_mapper_loss,
                      }
         for k in loss_hist.keys():
             self.log(f'train/{k}', loss_hist[k])
@@ -217,19 +205,17 @@ class ExpFidelityEnhancer(pl.LightningModule):
         x, y = batch
         x = x.float()
 
-        tau = self.fidelity_enhancer.tau.item()
+        tau = self.neural_mapper.tau.item()
         _, sprime_l = self.maskgit.encode_to_z_q(x, self.encoder_l, self.vq_model_l, svq_temp=tau)  # (b n)
         _, sprime_h = self.maskgit.encode_to_z_q(x, self.encoder_h, self.vq_model_h, svq_temp=tau)  # (b m)
 
-        fidelity_enhancer_loss, (xprime, xprime_R) = self._fidelity_enhancer_loss_fn(x, sprime_l, sprime_h)
-        percept_loss = self._perceptual_loss_fn(x, xprime_R)
+        neural_mapper_loss, (xprime, xprime_R) = self._neural_mapper_loss_fn(x, sprime_l, sprime_h)
 
         # log
-        loss = fidelity_enhancer_loss + percept_loss
+        loss = neural_mapper_loss
         self.log('global_step', self.global_step)
         loss_hist = {'loss':loss,
-                     'fidelity_enhancer_loss':fidelity_enhancer_loss,
-                     'percept_loss':percept_loss
+                     'neural_mapper_loss':neural_mapper_loss,
                      }
         for k in loss_hist.keys():
             self.log(f'val/{k}', loss_hist[k])
@@ -241,7 +227,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             # unconditional sampling
             num = 1024
             xhat_l, xhat_h, xhat = self.metrics.sample(self.maskgit, x.device, num, 'unconditional', class_index=class_index)
-            xhat_R = self.fidelity_enhancer(xhat.to(x.device)).detach().cpu().numpy()
+            xhat_R = self.neural_mapper(xhat.to(x.device)).detach().cpu().numpy()
 
             b = 0
             n_figs = 9
@@ -254,7 +240,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             axes[1].plot(xhat_h[b, 0, :])
             axes[2].set_title(r'$\hat{x}$')
             axes[2].plot(xhat[b, 0, :])
-            axes[3].set_title(r'FE($\hat{x}$) = $\hat{x}_R$')
+            axes[3].set_title(r'NM($\hat{x}$) = $\hat{x}_R$')
             axes[3].plot(xhat_R[b, 0, :])
 
             x = x.cpu().numpy()
@@ -262,11 +248,11 @@ class ExpFidelityEnhancer(pl.LightningModule):
             xprime_R = xprime_R.cpu().numpy()
             xhat = xhat.cpu().numpy()
             b_ = np.random.randint(0, x.shape[0])
-            axes[4].set_title(r'$x$ vs FE($x^\prime$)')
+            axes[4].set_title(r'$x$ vs NM($x^\prime$)')
             axes[4].plot(x[b_, 0, :], alpha=0.7)
             axes[4].plot(xprime_R[b_, 0, :], alpha=0.7)
 
-            axes[5].set_title(r'$x^\prime$ vs FE($x^\prime$)')
+            axes[5].set_title(r'$x^\prime$ vs NM($x^\prime$)')
             axes[5].plot(xprime[b_, 0, :], alpha=0.7)
             axes[5].plot(xprime_R[b_, 0, :], alpha=0.7)
             
@@ -276,7 +262,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
             axes[7].set_title(fr'$x^\prime$ ($\tau$={round(tau, 5)})')
             axes[7].plot(xprime[b_, 0, :])
 
-            axes[8].set_title(r'FE($x^\prime$)')
+            axes[8].set_title(r'NM($x^\prime$)')
             axes[8].plot(xprime_R[b_, 0, :])
 
             for ax in axes:
@@ -299,11 +285,11 @@ class ExpFidelityEnhancer(pl.LightningModule):
             zhat_R = self.metrics.z_gen_fn(xhat_R)
             fid_test_gen_fe = self.metrics.fid_score(self.metrics.z_test, zhat_R)
             mdd, acd, sd, kd = self.metrics.stat_metrics(self.metrics.X_test, xhat_R)
-            self.log('running_metrics/FID with FE', fid_test_gen_fe)
-            self.log('running_metrics/MDD with FE', mdd)
-            self.log('running_metrics/ACD with FE', acd)
-            self.log('running_metrics/SD with FE', sd)
-            self.log('running_metrics/KD with FE', kd)
+            self.log('running_metrics/FID with NM', fid_test_gen_fe)
+            self.log('running_metrics/MDD with NM', mdd)
+            self.log('running_metrics/ACD with NM', acd)
+            self.log('running_metrics/SD with NM', sd)
+            self.log('running_metrics/KD with NM', kd)
             
             z_prime = self.metrics.z_gen_fn(xprime)
             fid_x_test_x_prime = self.metrics.fid_score(self.metrics.z_test, z_prime)
@@ -332,7 +318,7 @@ class ExpFidelityEnhancer(pl.LightningModule):
 
     def configure_optimizers(self):
         opt = torch.optim.AdamW(self.parameters(), lr=self.config['exp_params']['lr'])
-        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage_fid_enhancer'], self.config['exp_params']['linear_warmup_rate'], min_lr=self.config['exp_params']['min_lr'])
+        scheduler = linear_warmup_cosine_annealingLR(opt, self.config['trainer_params']['max_steps']['stage_neural_mapper'], self.config['exp_params']['linear_warmup_rate'], min_lr=self.config['exp_params']['min_lr'])
         return {'optimizer': opt, 'lr_scheduler': scheduler}
 
 

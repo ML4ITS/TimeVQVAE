@@ -29,7 +29,7 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_ind', nargs='+', default=[0], type=int, help='Indices of GPU devices to use.')
-    parser.add_argument('--feature_extractor_type', type=str, default='supervised_fcn', help='rocket | rocket')
+    parser.add_argument('--feature_extractor_type', type=str, default='supervised_fcn', help='rocket | rocket for evaluation.')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     return parser.parse_args()
 
@@ -90,7 +90,7 @@ def train_stage2(config: dict,
     print('evaluating...')
     eval_device = device[0] if accelerator == 'gpu' else 'cpu'
     evaluation = Evaluation(dataset_name, in_channels, input_length, n_classes, eval_device, config, 
-                            use_fidelity_enhancer=False,
+                            use_neural_mapper=False,
                             feature_extractor_type=feature_extractor_type,
                             use_custom_dataset=use_custom_dataset).to(eval_device)
     min_num_gen_samples = config['evaluation']['min_num_gen_samples']  # large enough to capture the distribution

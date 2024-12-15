@@ -1,5 +1,5 @@
 """
-train TS-FidelityEnhancer
+train NM (Neural Mapper)
 """
 import copy
 import argparse
@@ -15,7 +15,7 @@ from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.loggers import WandbLogger
 from preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 
-from experiments.exp_fidelity_enhancer import ExpFidelityEnhancer
+from experiments.exp_neural_mapper import ExpNeuralMapper
 from utils import get_root_dir, load_yaml_param_settings, save_model, get_target_ucr_dataset_names, str2bool
 
 
@@ -25,12 +25,12 @@ def load_args():
                         default=get_root_dir().joinpath('configs', 'config.yaml'))
     parser.add_argument('--dataset_names', nargs='+', help="e.g., Adiac Wafer Crop`.", default='')
     parser.add_argument('--gpu_device_ind', nargs='+', default=[0], type=int, help='Indices of GPU devices to use.')
-    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket')
+    parser.add_argument('--feature_extractor_type', type=str, default='rocket', help='supervised_fcn | rocket for evaluation.')
     parser.add_argument('--use_custom_dataset', type=str2bool, default=False, help='Using a custom dataset, then set it to True.')
     return parser.parse_args()
 
 
-def train_stage_fid_enhancer(config: dict,
+def train_stage_neural_mapper(config: dict,
                  dataset_name: str,
                  train_data_loader: DataLoader,
                  test_data_loader: DataLoader,
@@ -38,12 +38,12 @@ def train_stage_fid_enhancer(config: dict,
                  feature_extractor_type:str,
                  use_custom_dataset:bool,
                  ):
-    project_name = 'TimeVQVAE-stage_fid_enhancer'
+    project_name = 'TimeVQVAE-stage_neural_mapper'
 
     # fit
     n_classes = len(np.unique(train_data_loader.dataset.Y))
     _, in_channels, input_length = train_data_loader.dataset.X.shape
-    train_exp = ExpFidelityEnhancer(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
+    train_exp = ExpNeuralMapper(dataset_name, in_channels, input_length, config, n_classes, feature_extractor_type, use_custom_dataset)
 
     n_trainable_params = sum(p.numel() for p in train_exp.parameters() if p.requires_grad)
     wandb_logger = WandbLogger(project=project_name, name=None, config={**config, 'dataset_name':dataset_name, 'n_trainable_params':n_trainable_params})
@@ -66,10 +66,10 @@ def train_stage_fid_enhancer(config: dict,
     trainer = pl.Trainer(logger=wandb_logger,
                          enable_checkpointing=False,
                          callbacks=[LearningRateMonitor(logging_interval='step')],
-                         max_steps=config['trainer_params']['max_steps']['stage_fid_enhancer'],
+                         max_steps=config['trainer_params']['max_steps']['stage_neural_mapper'],
                          devices=device,
                          accelerator=accelerator,
-                         val_check_interval=config['trainer_params']['val_check_interval']['stage_fid_enhancer'],
+                         val_check_interval=config['trainer_params']['val_check_interval']['stage_neural_mapper'],
                          check_val_every_n_epoch=None)
     trainer.fit(train_exp,
                 train_dataloaders=train_data_loader,
@@ -77,7 +77,7 @@ def train_stage_fid_enhancer(config: dict,
                 )
 
     print('saving the model...')
-    save_model({'fidelity_enhancer': train_exp.fidelity_enhancer}, id=dataset_name)
+    save_model({'neural_mapper': train_exp.neural_mapper}, id=dataset_name)
 
     wandb.finish()
 
@@ -97,7 +97,7 @@ if __name__ == '__main__':
         print('dataset_name:', dataset_name)
 
         # data pipeline
-        batch_size = config['dataset']['batch_sizes']['stage_fid_enhancer']
+        batch_size = config['dataset']['batch_sizes']['stage_neural_mapper']
         if not args.use_custom_dataset:
             dataset_importer = DatasetImporterUCR(dataset_name, **config['dataset'])
             train_data_loader, test_data_loader = [build_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
@@ -106,4 +106,4 @@ if __name__ == '__main__':
             train_data_loader, test_data_loader = [build_custom_data_pipeline(batch_size, dataset_importer, config, kind) for kind in ['train', 'test']]
 
         # train
-        train_stage_fid_enhancer(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_ind, args.feature_extractor_type, args.use_custom_dataset)
+        train_stage_neural_mapper(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_ind, args.feature_extractor_type, args.use_custom_dataset)
