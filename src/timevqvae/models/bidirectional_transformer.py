@@ -3,11 +3,11 @@ from typing import Union
 
 import torch
 import torch.nn as nn
-from torch.nn.utils import weight_norm
 import torch.nn.functional as F
+from einops import rearrange, repeat
 from torch import Tensor
+from torch.nn.utils import weight_norm
 
-from einops import repeat, rearrange
 # from x_transformers import ContinuousTransformerWrapper, Encoder as TFEncoder
 
 
@@ -389,7 +389,6 @@ class Attention(nn.Module):
         if (exists(context) and not self.cross_attend) or (not exists(context) and self.cross_attend):
             raise AssertionError("Context and cross_attend must either both be present or both be absent.")
 
-        n = x.shape[-2]
         h = self.heads
 
         x = self.norm(x)
@@ -601,7 +600,6 @@ class BidirectionalTransformer(nn.Module):
         self.n_classes = n_classes
         self.p_unconditional = p_unconditional
         in_dim = embed_dim if kind == 'lf' else 2 * embed_dim
-        out_dim = embed_dim
         self.emb_dropout = emb_dropout
         self.mask_token_ind = {'lf':codebook_sizes['lf'], 'hf':codebook_sizes['hf']}
 

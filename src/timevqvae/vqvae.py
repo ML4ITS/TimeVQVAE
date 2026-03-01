@@ -5,8 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from timevqvae.models.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
-from timevqvae.vector_quantization import VectorQuantize
+from timevqvae.models.vq_vae_encdec import VQVAEDecoder, VQVAEEncoder
 from timevqvae.utils.nn import quantize
 from timevqvae.utils.signal import (
     compute_downsample_rate,
@@ -15,6 +14,7 @@ from timevqvae.utils.signal import (
     zero_pad_high_freq,
     zero_pad_low_freq,
 )
+from timevqvae.vector_quantization import VectorQuantize
 
 
 @dataclass

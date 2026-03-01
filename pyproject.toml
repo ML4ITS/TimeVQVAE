@@ -44,3 +44,6 @@ dev = [
     "timevqvae",
     "twine>=6.2.0",
 ]
+
+[tool.ruff.lint.per-file-ignores]
+".google_colab/*.ipynb" = ["E402", "E711", "F841"]

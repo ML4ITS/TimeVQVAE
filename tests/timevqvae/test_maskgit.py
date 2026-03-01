@@ -6,6 +6,7 @@ import torch
 import torch.nn.functional as F
 
 import timevqvae.maskgit as maskgit_mod
+from timevqvae.maskgit import PriorModelConfig
 
 
 def test_gamma_func_modes_and_invalid():
@@ -457,6 +458,22 @@ def maskgit_instance(monkeypatch):
     monkeypatch.setattr(maskgit_mod, "freeze", lambda model: freeze_calls.append(model))
 
     vqvae = _TinyVQVAE()
+    lf_prior_cfg = PriorModelConfig(
+        hidden_dim=32,
+        n_layers=2,
+        heads=2,
+        ff_mult=2,
+        use_rmsnorm=False,
+        p_unconditional=0.1,
+    )
+    hf_prior_cfg = PriorModelConfig(
+        hidden_dim=64,
+        n_layers=2,
+        heads=2,
+        ff_mult=2,
+        use_rmsnorm=False,
+        p_unconditional=0.1,
+    )
     model = maskgit_mod.MaskGIT(
         vqvae=vqvae,
         lf_choice_temperature=0.7,
@@ -466,8 +483,8 @@ def maskgit_instance(monkeypatch):
         lf_codebook_size=5,
         hf_codebook_size=7,
         transformer_embedding_dim=16,
-        lf_prior_model_config={"hidden_dim": 32},
-        hf_prior_model_config={"hidden_dim": 64},
+        lf_prior_model_config=lf_prior_cfg,
+        hf_prior_model_config=hf_prior_cfg,
         classifier_free_guidance_scale=2.5,
         n_classes=4,
     )

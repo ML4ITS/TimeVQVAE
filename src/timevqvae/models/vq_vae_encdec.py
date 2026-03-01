@@ -1,13 +1,14 @@
 """
 reference: https://github.com/nadavbh12/VQ-VAE/blob/master/vq_vae/auto_encoder.py
 """
+import numpy as np
 import torch
 import torch.nn as nn
-from torch.nn.utils import weight_norm
 import torch.nn.functional as F
-import numpy as np
+from torch.nn.utils import weight_norm
+
 from timevqvae.utils.nn import SnakeActivation
-from timevqvae.utils.signal import timefreq_to_time, time_to_timefreq
+from timevqvae.utils.signal import time_to_timefreq, timefreq_to_time
 
 
 class ResBlock(nn.Module):

@@ -1,18 +1,15 @@
 """
 The code is taken from https://github.com/lucidrains/vector-quantize-pytorch
 """
-import copy
 from typing import Union
 
 import torch
-from torch import nn, einsum
-import torch.nn.functional as F
 import torch.distributed as distributed
-from torch.cuda.amp import autocast
+import torch.nn.functional as F
+from einops import rearrange, repeat
+from torch import einsum, nn
 from torch.distributions.categorical import Categorical
 
-from einops import rearrange, repeat
-from contextlib import contextmanager
 
 def exists(val):
     return val is not None
@@ -74,7 +71,7 @@ def sample_vectors(samples, num):
 
 
 def kmeans(samples, num_clusters, num_iters=10, use_cosine_sim=False):
-    dim, dtype, device = samples.shape[-1], samples.dtype, samples.device
+    dim, dtype = samples.shape[-1], samples.dtype
 
     means = sample_vectors(samples, num_clusters)
 
@@ -311,7 +308,7 @@ class VectorQuantize(nn.Module):
         """
         x: (B, N, D)
         """
-        shape, device, heads, is_multiheaded, codebook_size = x.shape, x.device, self.heads, self.heads > 1, self.codebook_size
+        device, heads, is_multiheaded = x.device, self.heads, self.heads > 1
         need_transpose = not self.channel_last and not self.accept_image_fmap
         vq_loss = {'loss': torch.tensor([0.], device=device, requires_grad=self.training),
                    'commit_loss': 0.,

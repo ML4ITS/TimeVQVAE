@@ -1,5 +1,5 @@
-import torch
 import pytest
+import torch
 
 import timevqvae.vqvae as vqvae_mod
 
