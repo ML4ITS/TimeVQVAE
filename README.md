@@ -18,7 +18,7 @@ Example of running `VQVAE` with a dummy 1D time-series input (`batch, channels, 
 import torch
 from timevqvae.vqvae import VQVAE
 
-model = VQVAE(
+vqvae = VQVAE(
     in_channels=1,
     input_length=128,
     n_fft=4,
@@ -35,7 +35,7 @@ model = VQVAE(
 )
 
 x = torch.randn(4, 1, 128)  # (batch, channels, length)
-out = model(x)
+out = vqvae(x)
 
 print(out.x_recon.shape)          # (4, 1, 128)
 print(out.recons_loss.keys())     # dict_keys(['LF.time', 'HF.time'])
@@ -141,18 +141,18 @@ The usage is simple:
 
 ## Related Papers
 
-### Neural Mapper for Vector Quantized Time Series Generator (NM-VQTSG)
+#### Neural Mapper for Vector Quantized Time Series Generator (NM-VQTSG)
 If you want to improve realism of generated time series while preserving context, please see our Neural Mapper paper:
 - Paper: https://arxiv.org/abs/2501.17553
 - Citation entry: [3] below
 
-### TimeVQVAE for Anomaly Detection (TimeVQVAE-AD)
+#### TimeVQVAE for Anomaly Detection (TimeVQVAE-AD)
 If your focus is anomaly detection with explainability and counterfactual sampling, please see TimeVQVAE-AD:
 - Paper: https://www.sciencedirect.com/science/article/pii/S0031320324008216
 - Code: https://github.com/ML4ITS/TimeVQVAE-AnomalyDetection
 - Citation entry: [4] below
 
-## Citation
+## References
 [1] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Vector Quantized Time Series Generation with a Bidirectional Prior Model." International Conference on Artificial Intelligence and Statistics. PMLR, 2023.
 
 [3] Lee, Daesoo, Sara Malacarne, and Erlend Aune. "Closing the Gap Between Synthetic and Ground Truth Time Series Distributions via Neural Mapping." arXiv preprint arXiv:2501.17553 (2025).
