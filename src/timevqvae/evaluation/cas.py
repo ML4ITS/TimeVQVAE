@@ -8,7 +8,7 @@ from supervised_FCN_2.experiments.exp_train import ExpFCN as ExpFCN_original
 from supervised_FCN_2.models.fcn import ConvBlock
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from evaluation.evaluation import Evaluation
+from timevqvae.evaluation.evaluation import Evaluation
 
 
 class SmallFCN(nn.Module):

@@ -10,19 +10,19 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 from sklearn.manifold import TSNE
 
-from experiments.exp_stage2 import ExpStage2
-from generators.maskgit import MaskGIT
-from preprocessing.data_pipeline import build_data_pipeline
-from preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
-from generators.sample import unconditional_sample, conditional_sample
+from timevqvae.experiments.exp_stage2 import ExpStage2
+from timevqvae.generators.maskgit import MaskGIT
+from timevqvae.preprocessing.data_pipeline import build_data_pipeline
+from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
+from timevqvae.generators.sample import unconditional_sample, conditional_sample
 from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN_2.example_compute_FID import calculate_fid
 from supervised_FCN_2.example_compute_IS import calculate_inception_score
-from utils import time_to_timefreq, timefreq_to_time
-from generators.neural_mapper import NeuralMapper
-from evaluation.rocket_functions import generate_kernels, apply_kernels
-from utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
-from evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
+from timevqvae.utils import time_to_timefreq, timefreq_to_time
+from timevqvae.generators.neural_mapper import NeuralMapper
+from timevqvae.evaluation.rocket_functions import generate_kernels, apply_kernels
+from timevqvae.utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
+from timevqvae.evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
 
 
 

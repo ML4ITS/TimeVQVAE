@@ -12,9 +12,9 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from generators.maskgit import MaskGIT
-from preprocessing.data_pipeline import build_data_pipeline
-from utils import get_root_dir, load_yaml_param_settings
+from timevqvae.generators.maskgit import MaskGIT
+from timevqvae.preprocessing.data_pipeline import build_data_pipeline
+from timevqvae.utils import get_root_dir, load_yaml_param_settings
 
 
 @torch.no_grad()

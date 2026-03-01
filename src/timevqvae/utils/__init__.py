@@ -24,7 +24,8 @@ import zipfile
 
 
 def get_root_dir():
-    return Path(__file__).parent.parent
+    # src/timevqvae/utils/__init__.py -> repository root
+    return Path(__file__).resolve().parents[3]
 # root_dir = Path(__file__).parent.parent
 prefix = os.path.join('datasets', 'processed')
 

@@ -1,5 +1,5 @@
 from torch.utils.data import DataLoader
-from preprocessing.preprocess_ucr import DatasetImporterUCR, UCRDataset, CustomDataset, DatasetImporterCustom
+from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, UCRDataset, CustomDataset, DatasetImporterCustom
 
 
 def build_data_pipeline(batch_size, dataset_importer: DatasetImporterUCR, config: dict, kind: str) -> DataLoader:

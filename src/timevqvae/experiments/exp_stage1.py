@@ -5,9 +5,9 @@ import matplotlib.pyplot as plt
 import wandb
 import pytorch_lightning as pl
 
-from encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
-from vector_quantization import VectorQuantize
-from utils import compute_downsample_rate, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize, linear_warmup_cosine_annealingLR
+from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
+from timevqvae.vector_quantization import VectorQuantize
+from timevqvae.utils import compute_downsample_rate, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize, linear_warmup_cosine_annealingLR
 
 
 class ExpStage1(pl.LightningModule):

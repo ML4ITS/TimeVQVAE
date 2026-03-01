@@ -11,13 +11,13 @@ from collections import deque
 
 from einops import repeat, rearrange
 from typing import Callable
-from generators.bidirectional_transformer import BidirectionalTransformer
+from timevqvae.generators.bidirectional_transformer import BidirectionalTransformer
 
-from encoder_decoders.vq_vae_encdec import VQVAEEncoder
-from vector_quantization.vq import VectorQuantize
+from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder
+from timevqvae.vector_quantization.vq import VectorQuantize
 
-from experiments.exp_stage1 import ExpStage1
-from utils import freeze, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
+from timevqvae.experiments.exp_stage1 import ExpStage1
+from timevqvae.utils import freeze, timefreq_to_time, time_to_timefreq, quantize, zero_pad_low_freq, zero_pad_high_freq
 
 
 class MaskGIT(nn.Module):
