@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitNexus Refresh"
+  short_description: "Refresh stale index and sync GitNexus skills"
+  default_prompt: "Use $gitnexus-refresh-on-stale to run analyze only when stale and sync .claude/skills/gitnexus to .agents/skills/gitnexus."
