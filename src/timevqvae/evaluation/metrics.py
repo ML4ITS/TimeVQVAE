@@ -15,7 +15,8 @@ from timevqvae.generators.sample import unconditional_sample, conditional_sample
 
 from timevqvae.evaluation.rocket_functions import generate_kernels, apply_kernels
 from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
-from timevqvae.utils import freeze, remove_outliers
+from timevqvae.utils.nn import freeze
+from timevqvae.utils.stats import remove_outliers
 from timevqvae.evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
 
 

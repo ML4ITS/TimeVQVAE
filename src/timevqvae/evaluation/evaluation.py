@@ -18,10 +18,11 @@ from timevqvae.generators.sample import unconditional_sample, conditional_sample
 from supervised_FCN_2.example_pretrained_model_loading import load_pretrained_FCN
 from supervised_FCN_2.example_compute_FID import calculate_fid
 from supervised_FCN_2.example_compute_IS import calculate_inception_score
-from timevqvae.utils import time_to_timefreq, timefreq_to_time
+from timevqvae.utils.signal import time_to_timefreq, timefreq_to_time
 from timevqvae.generators.neural_mapper import NeuralMapper
 from timevqvae.evaluation.rocket_functions import generate_kernels, apply_kernels
-from timevqvae.utils import zero_pad_low_freq, zero_pad_high_freq, remove_outliers
+from timevqvae.utils.signal import zero_pad_low_freq, zero_pad_high_freq
+from timevqvae.utils.stats import remove_outliers
 from timevqvae.evaluation.stat_metrics import marginal_distribution_difference, auto_correlation_difference, skewness_difference, kurtosis_difference
 
 

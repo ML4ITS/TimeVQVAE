@@ -2,6 +2,8 @@
 The code is taken from https://github.com/lucidrains/vector-quantize-pytorch
 """
 import copy
+from typing import Union
+
 import torch
 from torch import nn, einsum
 import torch.nn.functional as F
@@ -11,9 +13,6 @@ from torch.distributions.categorical import Categorical
 
 from einops import rearrange, repeat
 from contextlib import contextmanager
-
-from timevqvae.utils import *
-
 
 def exists(val):
     return val is not None
@@ -190,7 +189,6 @@ class EuclideanCodebook(nn.Module):
         batch_samples = rearrange(batch_samples, '... d -> (...) d')
         self.replace(batch_samples, mask=expired_codes)
 
-    @autocast(enabled=False)
     def forward(self, x, svq_temp:Union[float,None]=None):
         shape, dtype = x.shape, x.dtype
         flatten = rearrange(x, '... d -> (...) d')

@@ -6,7 +6,8 @@ import torch.nn as nn
 from torch.nn.utils import weight_norm
 import torch.nn.functional as F
 import numpy as np
-from timevqvae.utils.helper import timefreq_to_time, time_to_timefreq, SnakeActivation
+from timevqvae.utils.nn import SnakeActivation
+from timevqvae.utils.signal import timefreq_to_time, time_to_timefreq
 
 
 class ResBlock(nn.Module):

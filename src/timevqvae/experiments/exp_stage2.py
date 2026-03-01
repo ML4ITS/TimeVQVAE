@@ -7,7 +7,7 @@ import pytorch_lightning as pl
 
 from timevqvae.evaluation.metrics import Metrics, sample
 from timevqvae.generators.maskgit import MaskGIT
-from timevqvae.utils import linear_warmup_cosine_annealingLR
+from timevqvae.utils.optim import linear_warmup_cosine_annealingLR
 
 
 class ExpStage2(pl.LightningModule):

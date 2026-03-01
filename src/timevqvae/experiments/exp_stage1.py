@@ -7,7 +7,15 @@ import pytorch_lightning as pl
 
 from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from timevqvae.vector_quantization import VectorQuantize
-from timevqvae.utils import compute_downsample_rate, timefreq_to_time, time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq, quantize, linear_warmup_cosine_annealingLR
+from timevqvae.utils.nn import quantize
+from timevqvae.utils.optim import linear_warmup_cosine_annealingLR
+from timevqvae.utils.signal import (
+    compute_downsample_rate,
+    time_to_timefreq,
+    timefreq_to_time,
+    zero_pad_high_freq,
+    zero_pad_low_freq,
+)
 
 
 class ExpStage1(pl.LightningModule):

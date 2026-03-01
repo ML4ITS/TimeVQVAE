@@ -16,7 +16,10 @@ from pytorch_lightning.loggers import WandbLogger
 
 from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR
 from timevqvae.preprocessing.data_pipeline import build_data_pipeline
-from timevqvae.utils import load_yaml_param_settings, get_root_dir, get_target_ucr_dataset_names, str2bool
+from timevqvae.utils.cli import str2bool
+from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.utils.datasets import get_target_ucr_dataset_names
+from timevqvae.utils.paths import get_root_dir
 from timevqvae.evaluation.cas import CASDataset, ExpFCN
 
 

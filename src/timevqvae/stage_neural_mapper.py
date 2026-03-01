@@ -16,7 +16,11 @@ from pytorch_lightning.loggers import WandbLogger
 from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 
 from timevqvae.experiments.exp_neural_mapper import ExpNeuralMapper
-from timevqvae.utils import get_root_dir, load_yaml_param_settings, save_model, get_target_ucr_dataset_names, str2bool
+from timevqvae.utils.cli import str2bool
+from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.utils.datasets import get_target_ucr_dataset_names
+from timevqvae.utils.io import save_model
+from timevqvae.utils.paths import get_root_dir
 
 
 def load_args():

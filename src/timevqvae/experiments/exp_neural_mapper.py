@@ -22,7 +22,9 @@ from timevqvae.evaluation.rocket_functions import MiniRocketTransform
 from timevqvae.evaluation.metrics import Metrics
 from timevqvae.generators.neural_mapper import NeuralMapper
 from timevqvae.experiments.exp_stage2 import ExpStage2
-from timevqvae.utils import freeze, zero_pad_low_freq, zero_pad_high_freq, linear_warmup_cosine_annealingLR, time_to_timefreq
+from timevqvae.utils.nn import freeze
+from timevqvae.utils.optim import linear_warmup_cosine_annealingLR
+from timevqvae.utils.signal import time_to_timefreq, zero_pad_low_freq, zero_pad_high_freq
 
 
 class ExpNeuralMapper(pl.LightningModule):

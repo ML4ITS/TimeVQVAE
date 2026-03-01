@@ -18,7 +18,9 @@ from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetIm
 import pandas as pd
 
 from timevqvae.evaluation.evaluation import Evaluation
-from timevqvae.utils import get_root_dir, load_yaml_param_settings, str2bool
+from timevqvae.utils.cli import str2bool
+from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.utils.paths import get_root_dir
 
 
 def load_args():

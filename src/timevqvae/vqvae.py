@@ -7,9 +7,9 @@ import torch.nn.functional as F
 
 from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from timevqvae.vector_quantization import VectorQuantize
-from timevqvae.utils.helper import (
+from timevqvae.utils.nn import quantize
+from timevqvae.utils.signal import (
     compute_downsample_rate,
-    quantize,
     time_to_timefreq,
     timefreq_to_time,
     zero_pad_high_freq,

@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 
 from timevqvae.generators.maskgit import MaskGIT
 from timevqvae.preprocessing.data_pipeline import build_data_pipeline
-from timevqvae.utils import get_root_dir, load_yaml_param_settings
+from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.utils.paths import get_root_dir
 
 
 @torch.no_grad()

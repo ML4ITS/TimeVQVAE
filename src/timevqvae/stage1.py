@@ -17,7 +17,9 @@ from torch.utils.data import DataLoader
 from timevqvae.preprocessing.preprocess_ucr import DatasetImporterUCR, DatasetImporterCustom
 from timevqvae.experiments.exp_stage1 import ExpStage1
 from timevqvae.preprocessing.data_pipeline import build_data_pipeline, build_custom_data_pipeline
-from timevqvae.utils import get_root_dir, load_yaml_param_settings, str2bool
+from timevqvae.utils.cli import str2bool
+from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.utils.paths import get_root_dir
 
 
 def load_args():

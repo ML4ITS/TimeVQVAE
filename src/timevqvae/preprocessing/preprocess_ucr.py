@@ -10,7 +10,8 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset
 from sklearn.preprocessing import LabelEncoder
 
-from timevqvae.utils import get_root_dir, download_ucr_datasets
+from timevqvae.utils.datasets import download_ucr_datasets
+from timevqvae.utils.paths import get_root_dir
 
 
 class DatasetImporterUCR(object):
