@@ -1,0 +1,4 @@
+interface:
+  display_name: "UV PyPI Publish"
+  short_description: "Publish Python package to PyPI with uv"
+  default_prompt: "Publish this package to PyPI using uv and .secrets token loading."

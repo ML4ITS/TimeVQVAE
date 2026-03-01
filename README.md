@@ -13,6 +13,7 @@ uv add timevqvae
 ## Usage
 Example of running `VQVAE` with a dummy 1D time-series input (`batch, channels, length`):
 ```python
+import torch
 from timevqvae.vqvae import VQVAE
 
 model = VQVAE(

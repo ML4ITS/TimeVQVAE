@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "timevqvae"
-version = "0.1.0"
+version = "0.1.1"
 description = "Vector-quantized time-series generation with a bidirectional prior model."
 readme = "README.md"
 license = { file = "LICENSE" }
