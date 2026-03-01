@@ -11,6 +11,8 @@ uv add timevqvae
 ```
 
 ## Usage
+
+### Stage 1
 Example of running `VQVAE` with a dummy 1D time-series input (`batch, channels, length`):
 ```python
 import torch
@@ -40,6 +42,10 @@ print(out.recons_loss.keys())     # dict_keys(['LF.time', 'HF.time'])
 print(out.vq_losses.keys())       # dict_keys(['LF', 'HF'])
 print(out.perplexities.keys())    # dict_keys(['LF', 'HF'])
 ```
+
+### Stage 2
+
+
 
 ## Google Colab
 [![Google Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/ML4ITS/TimeVQVAE/blob/main/.google_colab/TimeVQVAE%20(generation%20only).ipynb) (NB! make sure to change your notebook setting to GPU.)
