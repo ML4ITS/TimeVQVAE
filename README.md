@@ -96,15 +96,19 @@ maskgit = MaskGIT(
 ).to(device)
 
 # ---------------------------------------------------------
-# 1) Training logic example: loss from compute_mask_prediction_loss
+# 1) Training logic example: dataclass loss from compute_mask_prediction_loss
 # ---------------------------------------------------------
 maskgit.train()
 x = torch.randn(4, 1, 128, device=device)                      # (batch, channels, length)
 class_condition = torch.randint(0, 2, (4, 1), device=device)   # (batch, 1)
 
 # maskgit.forward(...) internally calls training_logic.compute_mask_prediction_loss(...)
-total_loss, (loss_lf, loss_hf) = maskgit(x, class_condition)
-print(total_loss.item(), loss_lf.item(), loss_hf.item())
+losses = maskgit(x, class_condition)
+print(
+    losses.total_mask_prediction_loss.item(),
+    losses.mask_pred_loss_l.item(),
+    losses.mask_pred_loss_h.item(),
+)
 
 # ---------------------------------------------------------
 # 2) Sampling logic example: iterative_decoding + token decoding

@@ -30,6 +30,15 @@ class PriorModelConfig:
     emb_dropout: float = 0.3
 
 
+@dataclass(frozen=True)
+class MaskPredictionLoss:
+    """Schema for mask prediction losses."""
+
+    total_mask_prediction_loss: torch.Tensor
+    mask_pred_loss_l: torch.Tensor
+    mask_pred_loss_h: torch.Tensor
+
+
 class _MaskingLogic:
     """Token masking utilities used by both training and iterative decoding."""
 
@@ -149,7 +158,7 @@ class _TrainingLogic:
         vq_model_h: VectorQuantize,
         transformer_l: BidirectionalTransformer,
         transformer_h: BidirectionalTransformer,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+    ) -> MaskPredictionLoss:
         encoder_l.eval()
         vq_model_l.eval()
         encoder_h.eval()
@@ -182,7 +191,11 @@ class _TrainingLogic:
         mask_pred_loss_h = F.cross_entropy(logits_h_on_masked.float(), token_ids_h_on_masked.long())
 
         total_mask_prediction_loss = mask_pred_loss_l + mask_pred_loss_h
-        return total_mask_prediction_loss, (mask_pred_loss_l, mask_pred_loss_h)
+        return MaskPredictionLoss(
+            total_mask_prediction_loss=total_mask_prediction_loss,
+            mask_pred_loss_l=mask_pred_loss_l,
+            mask_pred_loss_h=mask_pred_loss_h,
+        )
 
 
 class _SamplingLogic:
@@ -477,7 +490,7 @@ class MaskGIT(nn.Module):
         logits_conditional = transformer(*token_inputs, class_condition=class_condition)
         return logits_unconditional + self.cfg_scale * (logits_conditional - logits_unconditional)
 
-    def forward(self, x: torch.Tensor, class_condition: torch.Tensor) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+    def forward(self, x: torch.Tensor, class_condition: torch.Tensor) -> MaskPredictionLoss:
         """
         Compute the masked token prediction losses for low- and high-frequency priors.
 
@@ -486,9 +499,10 @@ class MaskGIT(nn.Module):
             class_condition: Class-conditioning tensor.
 
         Returns:
-            A tuple of:
+            MaskPredictionLoss with:
                 - total_mask_prediction_loss: Sum of LF and HF cross-entropy losses.
-                - (mask_pred_loss_l, mask_pred_loss_h): Per-prior losses.
+                - mask_pred_loss_l: LF cross-entropy loss.
+                - mask_pred_loss_h: HF cross-entropy loss.
         """
         return self.training_logic.compute_mask_prediction_loss(
             x=x,

@@ -144,7 +144,7 @@ def test_compute_mask_prediction_loss_masks_and_reduces_cross_entropy():
     transformer_l = SimpleNamespace(name="lf")
     transformer_h = SimpleNamespace(name="hf")
 
-    total_loss, (loss_l, loss_h) = training_logic.compute_mask_prediction_loss(
+    losses = training_logic.compute_mask_prediction_loss(
         x=x,
         class_condition=class_condition,
         encoder_l=encoder_l,
@@ -157,9 +157,9 @@ def test_compute_mask_prediction_loss_masks_and_reduces_cross_entropy():
 
     expected_l = F.cross_entropy(logits_l[~known_l], token_ids_l[~known_l])
     expected_h = F.cross_entropy(logits_h[~known_h], token_ids_h[~known_h])
-    assert torch.isclose(loss_l, expected_l)
-    assert torch.isclose(loss_h, expected_h)
-    assert torch.isclose(total_loss, expected_l + expected_h)
+    assert torch.isclose(losses.mask_pred_loss_l, expected_l)
+    assert torch.isclose(losses.mask_pred_loss_h, expected_h)
+    assert torch.isclose(losses.total_mask_prediction_loss, expected_l + expected_h)
     assert encoder_l.eval_calls == 1
     assert vq_model_l.eval_calls == 1
     assert encoder_h.eval_calls == 1
@@ -578,7 +578,11 @@ def test_masked_prediction_cfg_guidance_mix(maskgit_instance):
 
 def test_maskgit_forward_delegates_to_training_logic(maskgit_instance, monkeypatch):
     model, _, _ = maskgit_instance
-    expected = (torch.tensor(9.0), (torch.tensor(4.0), torch.tensor(5.0)))
+    expected = maskgit_mod.MaskPredictionLoss(
+        total_mask_prediction_loss=torch.tensor(9.0),
+        mask_pred_loss_l=torch.tensor(4.0),
+        mask_pred_loss_h=torch.tensor(5.0),
+    )
     captured = {}
 
     def fake_compute(**kwargs):
