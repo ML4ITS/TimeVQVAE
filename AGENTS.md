@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **TimeVQVAE** (415 symbols, 1111 relationships, 32 execution flows).
+This project is indexed by GitNexus as **TimeVQVAE** (422 symbols, 1118 relationships, 33 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
