@@ -32,7 +32,7 @@ def unconditional_sample(maskgit: MaskGIT, n_samples: int, device, class_index=N
         b = batch_size
         if (i+1 == n_iters) and is_residual_batch:
             b = n_samples - ((n_iters-1) * batch_size)
-        embed_ind_l, embed_ind_h = sample_callback(num=b, device=device, class_index=class_index)
+        embed_ind_l, embed_ind_h = sample_callback(num_samples=b, device=device, class_condition=class_index)
 
         if return_representations:
             x_l, quantize_l = maskgit.decode_token_ind_to_timeseries(embed_ind_l, 'lf', True)

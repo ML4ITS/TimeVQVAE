@@ -44,7 +44,87 @@ print(out.perplexities.keys())    # dict_keys(['LF', 'HF'])
 ```
 
 ### Stage 2
+Example of running `MaskGIT` for:
+1. training loss computation (internally calls `compute_mask_prediction_loss`)
+2. token sampling with `iterative_decoding` and decoding sampled tokens back to time series.
 
+```python
+import torch
+from timevqvae.maskgit import MaskGIT, PriorModelConfig
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# Reuse `vqvae` from the Stage-1 example above.
+# For Stage-2, this should be a pretrained Stage-1 model with trained weights loaded.
+# Example:
+# vqvae.load_state_dict(torch.load("vqvae_stage1.pt", map_location=device))
+# vqvae = vqvae.to(device).eval()
+
+# Stage-2 prior model.
+# n_classes is dataset-dependent (example: 2 classes).
+maskgit = MaskGIT(
+    vqvae=vqvae,
+    lf_choice_temperature=10.0,
+    hf_choice_temperature=0.0,
+    lf_num_sampling_steps=10,
+    hf_num_sampling_steps=10,
+    lf_codebook_size=1024,
+    hf_codebook_size=1024,
+    transformer_embedding_dim=128,
+    lf_prior_model_config=PriorModelConfig(
+        hidden_dim=128,
+        n_layers=4,
+        heads=2,
+        ff_mult=1,
+        use_rmsnorm=True,
+        p_unconditional=0.2,
+        model_dropout=0.3,
+        emb_dropout=0.3,
+    ),
+    hf_prior_model_config=PriorModelConfig(
+        hidden_dim=32,
+        n_layers=1,
+        heads=1,
+        ff_mult=1,
+        use_rmsnorm=True,
+        p_unconditional=0.2,
+        model_dropout=0.3,
+        emb_dropout=0.3,
+    ),
+    classifier_free_guidance_scale=1.0,
+    n_classes=2,
+).to(device)
+
+# ---------------------------------------------------------
+# 1) Training logic example: loss from compute_mask_prediction_loss
+# ---------------------------------------------------------
+maskgit.train()
+x = torch.randn(4, 1, 128, device=device)                      # (batch, channels, length)
+class_condition = torch.randint(0, 2, (4, 1), device=device)   # (batch, 1)
+
+# maskgit.forward(...) internally calls training_logic.compute_mask_prediction_loss(...)
+total_loss, (loss_lf, loss_hf) = maskgit(x, class_condition)
+print(total_loss.item(), loss_lf.item(), loss_hf.item())
+
+# ---------------------------------------------------------
+# 2) Sampling logic example: iterative_decoding + token decoding
+# ---------------------------------------------------------
+maskgit.eval()
+with torch.no_grad():
+    token_ids_l, token_ids_h = maskgit.iterative_decoding(
+        num_samples=4,
+        mode="cosine",
+        class_condition=1,   # int or tensor; normalized to (num_samples, 1)
+        device=device,
+    )
+
+    x_l = maskgit.decode_token_ind_to_timeseries(token_ids_l, frequency="lf")  # (4, 1, 128)
+    x_h = maskgit.decode_token_ind_to_timeseries(token_ids_h, frequency="hf")  # (4, 1, 128)
+    x_gen = x_l + x_h
+
+print(token_ids_l.shape, token_ids_h.shape)
+print(x_l.shape, x_h.shape, x_gen.shape)
+```
 
 
 ## Google Colab

@@ -141,3 +141,4 @@ saved_models*
 .DS_Store
 .gitnexus
 CLAUDE.md
+.claude/

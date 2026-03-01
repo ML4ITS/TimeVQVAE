@@ -593,21 +593,6 @@ class BidirectionalTransformer(nn.Module):
                  model_dropout:float=0.3,
                  emb_dropout:float=0.3,
                  **kwargs):
-        """
-        :param kind:
-        :param num_tokens:
-        :param codebook_sizes:
-        :param embed_dim:
-        :param hidden_dim:
-        :param n_layers:
-        :param heads:
-        :param ff_mult:
-        :param use_rmsnorm:
-        :param p_unconditional:
-        :param n_classes:
-        :param num_tokens_l:
-        :param kwargs:
-        """
         super().__init__()
         kind = kind.lower()
         assert kind in ['lf', 'hf'], 'invalid `kind`.'

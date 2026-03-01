@@ -1,4 +1,5 @@
 import tempfile
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Callable, Union
 
@@ -6,13 +7,27 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from einops import rearrange, repeat
+from einops import rearrange
 
 from timevqvae.models.vq_vae_encdec import VQVAEEncoder
 from timevqvae.models.bidirectional_transformer import BidirectionalTransformer
 from timevqvae.vector_quantization.vq import VectorQuantize
 from timevqvae.vqvae import VQVAE
 from timevqvae.utils.nn import freeze, quantize
+
+
+@dataclass(frozen=True)
+class PriorModelConfig:
+    """Schema for LF/HF prior transformer hyperparameters."""
+
+    hidden_dim: int
+    n_layers: int
+    heads: int
+    ff_mult: int
+    use_rmsnorm: bool
+    p_unconditional: float
+    model_dropout: float = 0.3
+    emb_dropout: float = 0.3
 
 
 class _MaskingLogic:
@@ -82,7 +97,7 @@ class _MaskingLogic:
         mask_len: (b 1)
         probs: (b n)
 
-        This version keeps `mask_len` exactly for each item in the batch.
+        `mask_len` is expected to be homogeneous across batch (same value for all items).
         """
 
         def log(t: torch.Tensor, eps: float = 1e-20) -> torch.Tensor:
@@ -92,9 +107,19 @@ class _MaskingLogic:
             noise = torch.zeros_like(t).uniform_(0, 1)
             return -log(-log(noise))
 
+        if mask_len.ndim != 2 or mask_len.shape[1] != 1:
+            raise ValueError("`mask_len` must have shape (batch_size, 1).")
+        if mask_len.shape[0] != probs.shape[0]:
+            raise ValueError("`mask_len` batch size must match `probs` batch size.")
+        if not torch.all(mask_len == mask_len[0]):
+            raise ValueError("`mask_len` must be homogeneous across the batch.")
+
         confidence = torch.log(probs + 1e-5) + temperature * gumbel_noise(probs).to(device)
-        mask_len_unique = int(mask_len.unique().item())
-        masking_indices = torch.topk(confidence, k=mask_len_unique, dim=-1, largest=False).indices
+        mask_len_scalar = int(mask_len[0, 0].item())
+        if mask_len_scalar < 0 or mask_len_scalar > probs.shape[-1]:
+            raise ValueError("`mask_len` must be in [0, num_tokens].")
+
+        masking_indices = torch.topk(confidence, k=mask_len_scalar, dim=-1, largest=False).indices
         masking = torch.zeros_like(confidence).to(device)
         for i in range(masking_indices.shape[0]):
             masking[i, masking_indices[i].long()] = 1.0
@@ -267,7 +292,7 @@ class _SamplingLogic:
         transformer_l: BidirectionalTransformer,
         transformer_h: BidirectionalTransformer,
         mode: str = "cosine",
-        class_index: Union[int, None] = None,
+        class_condition: Union[int, torch.Tensor, None] = None,
         device: Union[str, torch.device] = "cpu",
     ) -> tuple[torch.Tensor, torch.Tensor]:
         token_ids_l = self.create_input_tokens(num_samples, num_tokens_l, self.masking_logic.mask_token_ids["lf"], device)
@@ -277,11 +302,7 @@ class _SamplingLogic:
         unknown_token_count_h = torch.sum(token_ids_h == self.masking_logic.mask_token_ids["hf"], dim=-1)
         mask_schedule = self.masking_logic.gamma_func(mode)
 
-        class_condition = (
-            repeat(torch.tensor([class_index]).int().to(device), "i -> b i", b=num_samples)
-            if class_index is not None
-            else None
-        )
+        class_condition = self._normalize_class_condition(class_condition, num_samples, device)
 
         token_ids_l = self._first_pass(
             token_ids_l,
@@ -302,6 +323,41 @@ class _SamplingLogic:
         )
         return token_ids_l, token_ids_h
 
+    @staticmethod
+    def _normalize_class_condition(
+        class_condition: Union[int, torch.Tensor, None],
+        num_samples: int,
+        device: Union[str, torch.device],
+    ) -> Union[torch.Tensor, None]:
+        if class_condition is None:
+            return None
+
+        if isinstance(class_condition, int):
+            return torch.full((num_samples, 1), class_condition, device=device, dtype=torch.long)
+
+        if not torch.is_tensor(class_condition):
+            raise TypeError("`class_condition` must be None, int, or torch.Tensor.")
+
+        class_condition = class_condition.to(device=device).long()
+        if class_condition.ndim == 0:
+            return class_condition.view(1, 1).repeat(num_samples, 1)
+        if class_condition.ndim == 1:
+            if class_condition.shape[0] == 1:
+                return class_condition.view(1, 1).repeat(num_samples, 1)
+            if class_condition.shape[0] == num_samples:
+                return class_condition.unsqueeze(1)
+            raise ValueError("1D `class_condition` must have length 1 or `num_samples`.")
+        if class_condition.ndim == 2:
+            if class_condition.shape[1] != 1:
+                raise ValueError("2D `class_condition` must have shape (batch_size, 1).")
+            if class_condition.shape[0] == 1:
+                return class_condition.repeat(num_samples, 1)
+            if class_condition.shape[0] == num_samples:
+                return class_condition
+            raise ValueError("2D `class_condition` batch size must be 1 or `num_samples`.")
+
+        raise ValueError("`class_condition` must be a scalar, 1D, or 2D tensor.")
+
 
 class MaskGIT(nn.Module):
     """Orchestrator for MaskGIT training and sampling."""
@@ -316,10 +372,10 @@ class MaskGIT(nn.Module):
         lf_codebook_size: int,
         hf_codebook_size: int,
         transformer_embedding_dim: int,
-        lf_prior_model_config: dict,
-        hf_prior_model_config: dict,
+        lf_prior_model_config: PriorModelConfig,
+        hf_prior_model_config: PriorModelConfig,
         classifier_free_guidance_scale: float,
-        n_classes: int,
+        n_classes: int = 0,
         **kwargs,
     ):
         super().__init__()
@@ -356,12 +412,15 @@ class MaskGIT(nn.Module):
             "lf": lf_codebook_size,
             "hf": hf_codebook_size,
         }
+        lf_prior_model_config_dict = self._normalize_prior_model_config(lf_prior_model_config, "lf_prior_model_config")
+        hf_prior_model_config_dict = self._normalize_prior_model_config(hf_prior_model_config, "hf_prior_model_config")
+
         self.transformer_l = BidirectionalTransformer(
             "lf",
             self.num_tokens_l,
             codebook_sizes,
             transformer_embedding_dim,
-            **lf_prior_model_config,
+            **lf_prior_model_config_dict,
             n_classes=n_classes,
         )
         self.transformer_h = BidirectionalTransformer(
@@ -369,7 +428,7 @@ class MaskGIT(nn.Module):
             self.num_tokens_h,
             codebook_sizes,
             transformer_embedding_dim,
-            **hf_prior_model_config,
+            **hf_prior_model_config_dict,
             n_classes=n_classes,
             num_tokens_l=self.num_tokens_l,
         )
@@ -385,6 +444,15 @@ class MaskGIT(nn.Module):
             hf_num_sampling_steps=hf_num_sampling_steps,
             masked_prediction_fn=self.masked_prediction,
         )
+
+    @staticmethod
+    def _normalize_prior_model_config(
+        config: PriorModelConfig,
+        config_name: str,
+    ) -> dict:
+        if isinstance(config, PriorModelConfig):
+            return asdict(config)
+        raise TypeError(f"{config_name} must be a PriorModelConfig instance.")
 
     @torch.no_grad()
     def encode_to_z_q(
@@ -438,7 +506,7 @@ class MaskGIT(nn.Module):
         self,
         num_samples: int = 1,
         mode: str = "cosine",
-        class_index: Union[int, None] = None,
+        class_condition: Union[int, torch.Tensor, None] = None,
         device: Union[str, torch.device] = "cpu",
     ) -> tuple[torch.Tensor, torch.Tensor]:
         return self.sampling_logic.iterative_decoding(
@@ -448,7 +516,7 @@ class MaskGIT(nn.Module):
             transformer_l=self.transformer_l,
             transformer_h=self.transformer_h,
             mode=mode,
-            class_index=class_index,
+            class_condition=class_condition,
             device=device,
         )
 
