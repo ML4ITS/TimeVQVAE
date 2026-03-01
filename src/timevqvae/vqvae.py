@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
+from timevqvae.models.vq_vae_encdec import VQVAEEncoder, VQVAEDecoder
 from timevqvae.vector_quantization import VectorQuantize
 from timevqvae.utils.nn import quantize
 from timevqvae.utils.signal import (

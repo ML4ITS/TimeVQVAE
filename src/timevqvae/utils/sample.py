@@ -12,9 +12,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from timevqvae.generators.maskgit import MaskGIT
-from timevqvae.preprocessing.data_pipeline import build_data_pipeline
-from timevqvae.utils.config import load_yaml_param_settings
+from timevqvae.maskgit import MaskGIT
 from timevqvae.utils.paths import get_root_dir
 
 

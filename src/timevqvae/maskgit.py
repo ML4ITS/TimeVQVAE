@@ -8,8 +8,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, repeat
 
-from timevqvae.encoder_decoders.vq_vae_encdec import VQVAEEncoder
-from timevqvae.generators.bidirectional_transformer import BidirectionalTransformer
+from timevqvae.models.vq_vae_encdec import VQVAEEncoder
+from timevqvae.models.bidirectional_transformer import BidirectionalTransformer
 from timevqvae.vector_quantization.vq import VectorQuantize
 from timevqvae.vqvae import VQVAE
 from timevqvae.utils.nn import freeze, quantize

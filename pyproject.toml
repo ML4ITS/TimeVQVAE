@@ -39,6 +39,7 @@ timevqvae = { workspace = true }
 [dependency-groups]
 dev = [
     "build>=1.4.0",
+    "matplotlib>=3.10.8",
     "pytest>=9.0.2",
     "timevqvae",
     "twine>=6.2.0",
