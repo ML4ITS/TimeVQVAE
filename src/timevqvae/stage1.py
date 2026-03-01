@@ -86,7 +86,7 @@ def train_stage1(config: dict,
     trainer.save_checkpoint(os.path.join(f'saved_models', f'stage1-{dataset_name}.ckpt'))
 
 
-if __name__ == '__main__':
+def main():
     # load config
     args = load_args()
     config = load_yaml_param_settings(args.config)
@@ -103,3 +103,7 @@ if __name__ == '__main__':
 
         # train
         train_stage1(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_ind)
+
+
+if __name__ == '__main__':
+    main()

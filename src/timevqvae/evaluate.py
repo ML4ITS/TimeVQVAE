@@ -224,7 +224,7 @@ def evaluate(config: dict,
     wandb.finish()
 
 
-if __name__ == '__main__':
+def main():
     # load config
     args = load_args()
     config = load_yaml_param_settings(args.config)
@@ -254,4 +254,8 @@ if __name__ == '__main__':
 
         # clean memory
         torch.cuda.empty_cache()
+
+
+if __name__ == '__main__':
+    main()
 

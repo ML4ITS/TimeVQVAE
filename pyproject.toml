@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "timevqvae"
+version = "0.1.0"
+description = "Vector-quantized time-series generation with a bidirectional prior model."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+authors = [
+    { name = "Daesoo Lee" },
+]
+keywords = ["time-series", "generative-models", "vqvae", "pytorch", "transformer"]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+urls = { Homepage = "https://github.com/ML4ITS/TimeVQVAE", Repository = "https://github.com/ML4ITS/TimeVQVAE", Issues = "https://github.com/ML4ITS/TimeVQVAE/issues" }
+dependencies = [
+    "einops>=0.8.2",
+    "numpy>=2.4.2",
+    "pyyaml>=6.0.3",
+    "torch>=2.10.0",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv.sources]
+timevqvae = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "build>=1.4.0",
+    "pytest>=9.0.2",
+    "timevqvae",
+    "twine>=6.2.0",
+]

@@ -32,7 +32,7 @@ def load_args():
     return parser.parse_args()
 
 
-if __name__ == '__main__':
+def main():
     # load config
     args = load_args()
     config = load_yaml_param_settings(args.config)
@@ -79,3 +79,7 @@ if __name__ == '__main__':
                     val_dataloaders=real_test_data_loader, )
 
         wandb.finish()
+
+
+if __name__ == '__main__':
+    main()

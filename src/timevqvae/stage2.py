@@ -117,7 +117,7 @@ def train_stage2(config: dict,
     wandb.finish()
 
 
-if __name__ == '__main__':
+def main():
     # load config
     args = load_args()
     config = load_yaml_param_settings(args.config)
@@ -138,3 +138,7 @@ if __name__ == '__main__':
 
         # train
         train_stage2(config, dataset_name, train_data_loader, test_data_loader, args.gpu_device_ind, args.feature_extractor_type, args.use_custom_dataset)
+
+
+if __name__ == '__main__':
+    main()
