@@ -87,7 +87,7 @@ class Evaluation(nn.Module):
                                                       strict=False)
         self.stage2.eval()
         self.maskgit = self.stage2.maskgit
-        self.stage1 = self.stage2.maskgit.stage1
+        self.vqvae = self.stage2.maskgit.vqvae
 
         # load the neural mapper
         if use_neural_mapper:
@@ -182,7 +182,7 @@ class Evaluation(nn.Module):
             s = slice(i * self.batch_size, (i + 1) * self.batch_size)
             x = X[s]  # (b 1 l)
             x = torch.from_numpy(x).float().to(self.device)
-            x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
+            x_rec = self.vqvae(x).x_recon.cpu().detach().numpy().astype(float)  # (b 1 l)
             z_t = self._extract_feature_representations(x_rec)
             zs.append(z_t)
         zs = np.concatenate(zs, axis=0)
@@ -214,13 +214,13 @@ class Evaluation(nn.Module):
             x = X[s]  # (b 1 l)
             x = torch.from_numpy(x).float().to(self.device)
             
-            # x_rec = self.stage1.forward(batch=(x, None), batch_idx=-1, return_x_rec=True).cpu().detach().numpy().astype(float)  # (b 1 l)
+            # x_rec = self.vqvae(x).x_recon.cpu().detach().numpy().astype(float)  # (b 1 l)
             # svq_temp_rng = self.config['neural_mapper']['svq_temp_rng']
             # svq_temp = np.random.uniform(*svq_temp_rng)
             # tau = self.config['neural_mapper']['tau']
             tau = self.neural_mapper.tau.item()
-            _, s_a_l = self.maskgit.encode_to_z_q(x, self.stage1.encoder_l, self.stage1.vq_model_l, svq_temp=tau)  # (b n)
-            _, s_a_h = self.maskgit.encode_to_z_q(x, self.stage1.encoder_h, self.stage1.vq_model_h, svq_temp=tau)  # (b m)
+            _, s_a_l = self.maskgit.encode_to_z_q(x, self.vqvae.encoder_l, self.vqvae.vq_model_l, svq_temp=tau)  # (b n)
+            _, s_a_h = self.maskgit.encode_to_z_q(x, self.vqvae.encoder_h, self.vqvae.vq_model_h, svq_temp=tau)  # (b m)
             x_a_l = self.maskgit.decode_token_ind_to_timeseries(s_a_l, 'lf')  # (b 1 l)
             x_a_h = self.maskgit.decode_token_ind_to_timeseries(s_a_h, 'hf')  # (b 1 l)
             x_a = x_a_l + x_a_h  # (b c l)

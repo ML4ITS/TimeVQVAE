@@ -1,3 +1,4 @@
+import os
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -7,6 +8,7 @@ import pytorch_lightning as pl
 
 from timevqvae.evaluation.metrics import Metrics, sample
 from timevqvae.generators.maskgit import MaskGIT
+from timevqvae.vqvae import VQVAE
 from timevqvae.utils.optim import linear_warmup_cosine_annealingLR
 
 
@@ -25,13 +27,52 @@ class ExpStage2(pl.LightningModule):
         self.config = config
         self.use_custom_dataset = use_custom_dataset
 
-        self.maskgit = MaskGIT(dataset_name, in_channels, input_length, **config['MaskGIT'], config=config, n_classes=n_classes)
+        vqvae = self._load_stage1_vqvae(dataset_name, in_channels, input_length, config)
+        self.maskgit = MaskGIT(
+            vqvae=vqvae,
+            low_frequency_choice_temperature=config['MaskGIT']['choice_temperatures']['lf'],
+            high_frequency_choice_temperature=config['MaskGIT']['choice_temperatures']['hf'],
+            low_frequency_num_sampling_steps=config['MaskGIT']['T']['lf'],
+            high_frequency_num_sampling_steps=config['MaskGIT']['T']['hf'],
+            low_frequency_codebook_size=config['VQ-VAE']['codebook_sizes']['lf'],
+            high_frequency_codebook_size=config['VQ-VAE']['codebook_sizes']['hf'],
+            transformer_embedding_dim=config['encoder']['hid_dim'],
+            low_frequency_prior_model_config=config['MaskGIT']['prior_model_l'],
+            high_frequency_prior_model_config=config['MaskGIT']['prior_model_h'],
+            classifier_free_guidance_scale=config['MaskGIT']['cfg_scale'],
+            n_classes=n_classes,
+        )
         self.metrics = Metrics(config, dataset_name, n_classes, feature_extractor_type=feature_extractor_type, use_custom_dataset=use_custom_dataset)
+
+    @staticmethod
+    def _load_stage1_vqvae(dataset_name: str, in_channels: int, input_length: int, config: dict) -> VQVAE:
+        vqvae = VQVAE(
+            in_channels=in_channels,
+            input_length=input_length,
+            n_fft=config['VQ-VAE']['n_fft'],
+            init_dim=config['encoder']['init_dim'],
+            hid_dim=config['encoder']['hid_dim'],
+            downsampled_width_l=config['encoder']['downsampled_width']['lf'],
+            downsampled_width_h=config['encoder']['downsampled_width']['hf'],
+            encoder_n_resnet_blocks=config['encoder']['n_resnet_blocks'],
+            decoder_n_resnet_blocks=config['decoder']['n_resnet_blocks'],
+            codebook_size_l=config['VQ-VAE']['codebook_sizes']['lf'],
+            codebook_size_h=config['VQ-VAE']['codebook_sizes']['hf'],
+            kmeans_init=config['VQ-VAE']['kmeans_init'],
+            codebook_dim=config['VQ-VAE']['codebook_dim'],
+        )
+        ckpt_path = os.path.join('saved_models', f'stage1-{dataset_name}.ckpt')
+        ckpt = torch.load(ckpt_path, map_location='cpu')
+        vqvae.load_state_dict(ckpt['state_dict'])
+        vqvae.eval()
+        for param in vqvae.parameters():
+            param.requires_grad = False
+        return vqvae
 
     def training_step(self, batch, batch_idx):
         x, y = batch
 
-        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
+        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit.train(x, y)
 
         # lr scheduler
         sch = self.lr_schedulers()
@@ -54,7 +95,7 @@ class ExpStage2(pl.LightningModule):
         self.eval()
         x, y = batch
 
-        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit(x, y)
+        mask_pred_loss, (mask_pred_loss_l, mask_pred_loss_h) = self.maskgit.train(x, y)
 
         # log
         self.log('global_step', self.global_step)
